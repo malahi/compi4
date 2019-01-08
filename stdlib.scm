@@ -1,3 +1,16 @@
+(define append
+  (let ((null? null?) (car car) (cdr cdr) (cons cons))
+    (lambda args
+      ((letrec ((f (lambda (ls args)
+                     (if (null? args)
+                         ls
+                         ((letrec ((g (lambda (ls)
+                                        (if (null? ls)
+                                            (f (car args) (cdr args))
+                                            (cons (car ls) (g (cdr ls)))))))
+                            g) ls)))))
+         f) '() args))))
+
 (define zero? 
   (let ((= =))
     (lambda (x) (= x 0))))
@@ -33,10 +46,12 @@
 	    ((= 1 (length y)) (make-vector x (car y)))
 	    (else "this should be an error, but you don't support exceptions")))))
 
+
+
 (define not
   (let ((eq? eq?))
     (lambda (x)
-      (if (eq? x #f) #t #f))))
+      (if (eq? x #t) #f #t))))
 
 (define number?
   (let ((float? float?) (integer? integer?))
@@ -85,6 +100,8 @@
 (define vector
   (let ((list->vector list->vector))
     (lambda x (list->vector x))))
+
+
 
 (define +
   (let ((null? null?)(+ +)(car car)(apply apply)(cdr cdr))
@@ -174,16 +191,3 @@
 	 (and (string? x) (string? y) (compare-composite x y string-ref string-length))
 	 (and (vector? x) (vector? y) (compare-composite x y vector-ref vector-length))
 	 (eq? x y))))))
-
-	 (define append
-		(let ((null? null?) (car car) (cdr cdr) (cons cons))
-			(lambda args
-				((letrec ((f (lambda (ls args)
-											 (if (null? args)
-													 ls
-													 ((letrec ((g (lambda (ls)
-																					(if (null? ls)
-																							(f (car args) (cdr args))
-																							(cons (car ls) (g (cdr ls)))))))
-															g) ls)))))
-					 f) '() args))))

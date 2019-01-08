@@ -11,6 +11,8 @@ let or_label_i  = ref 1;;
 let if_label_i  = ref 1;;
 let app_label_i  = ref 1;;
 
+let a = ref 1;;
+
 let getIndex i =
     let index = !i in
       i := !i + 1;
@@ -116,11 +118,6 @@ let rec makeFreeVarTable_h ls expr =
     let exp_ls = makeFreeVarTable_h ls expr in
       defineIndex 0 exp_ls;;
 
-  
-  (* let i = ref (-1) in *)
-    (* List.map (fun (x , _) -> i := !i + 1; (x , (!i)*8)) (makeFreeVarTable_h ls expr);;  *)
-
-
 
 let rec makeAssmCode consts fvars lam_i e =
   match e with  
@@ -144,10 +141,10 @@ let rec makeAssmCode consts fvars lam_i e =
                                     "mov qword [fvar_tbl + " ^ (string_of_int (getVarTableIndex fvars v)) ^ "], rax \n" ^ 
                                     "mov rax, SOB_VOID_ADDRESS \n"
   | Seq'(ls) -> List.fold_left (fun acc x -> (acc ^ (makeAssmCode consts fvars lam_i x))) "" ls
-  | Or'(ls) -> let or_index = (string_of_int (getIndex or_label_i)) in
+  | Or'(ls) -> let or_index = (string_of_int (getIndex a)) in
                 (List.fold_left (fun acc x -> (acc ^ (makeAssmCode consts fvars lam_i x) ^ ("cmp rax, SOB_FALSE_ADDRESS \n jne orLexit" ^ or_index ^ " \n"))) "" (List.rev (List.tl (List.rev (ls))))) ^ 
                 (List.fold_left (fun acc x -> (acc ^ (makeAssmCode consts fvars lam_i x) ^ ("orLexit" ^ or_index ^ ": \n") )) "" [(List.nth ls ((List.length ls) - 1))]) 
-  | If'(test ,dit ,dif) -> let if_index = (string_of_int (getIndex if_label_i)) in
+  | If'(test ,dit ,dif) -> let if_index = (string_of_int (getIndex a)) in
                               (makeAssmCode consts fvars lam_i test) ^ 
                               "cmp rax, SOB_FALSE_ADDRESS \n" ^ 
                               "je Lelse" ^ if_index ^ " \n " ^ 
@@ -158,16 +155,16 @@ let rec makeAssmCode consts fvars lam_i e =
                               "Lexit" ^ if_index ^ ": \n"
   | BoxGet'(v) -> (makeAssmCode consts fvars lam_i (Var'(v))) ^ 
                   "mov rax, qword [rax] \n"
-  | Box'(v) -> "MALLOC rdi , 8\n" ^
+  | Box'(v) -> "MALLOC rsi , 8\n" ^
                ((makeAssmCode consts fvars lam_i (Var'(v)))) ^
-               "mov [rdi], rax\n" ^
-               "mov rax, rdi\n"
+               "mov [rsi], rax\n" ^
+               "mov rax, rsi\n"
   | BoxSet'(v , eps) -> (makeAssmCode consts fvars lam_i eps) ^ 
                         "push rax \n" ^
                         (makeAssmCode consts fvars lam_i (Var'(v))) ^ 
                         "pop qword [rax] \n
                          mov rax, SOB_VOID_ADDRESS\n"
-  | Applic'(proc, args) -> let index = (string_of_int (getIndex app_label_i)) in
+  | Applic'(proc, args) -> let index = (string_of_int (getIndex a)) in
                            "push qword SOB_NIL_ADDRESS\n" ^
                            (List.fold_right (fun x acc-> ((acc ^ makeAssmCode consts fvars lam_i x) ^ "push rax \n")) args "") ^ 
                            "push " ^ (string_of_int (List.length args)) ^ " \n" ^
@@ -186,7 +183,7 @@ let rec makeAssmCode consts fvars lam_i e =
                            "shl rbx, 3\n" ^
                            "add rsp, rbx\n"                     
 
-  | LambdaSimple'(params , body) -> let label = (string_of_int (getIndex lam_label_i)) in
+  | LambdaSimple'(params , body) -> let label = (string_of_int (getIndex a)) in
                                     ";------------- copy env " ^ label ^ " ----------------\n" ^
                                     "COPY_ENV " ^ (string_of_int (8*(lam_i + 1))) ^ " , " ^ (string_of_int ((lam_i + 1))) ^ "\n" ^
                                     "mov r15, r14\n" ^
@@ -229,7 +226,7 @@ let rec makeAssmCode consts fvars lam_i e =
                                     " leave\n" ^
                                     " ret\n" ^
                                     "Lcont" ^ label ^ ":\n"
-  | LambdaOpt'(params, opt , body) -> let label = (string_of_int (getIndex lam_label_i)) in
+  | LambdaOpt'(params, opt , body) -> let label = (string_of_int (getIndex a)) in
                                     ";------------- copy env " ^ label ^ " ----------------\n" ^                                  
                                     "COPY_ENV " ^ (string_of_int (8*(lam_i + 1))) ^ " , " ^ (string_of_int ((lam_i + 1))) ^ "\n" ^
                                     "mov r15, r14\n" ^
@@ -328,7 +325,7 @@ let rec makeAssmCode consts fvars lam_i e =
                                     " ret\n" ^
                                     "Lcont" ^ label ^ ":\n"
   
-  | ApplicTP'(proc , args) -> let index = (string_of_int (getIndex app_label_i)) in
+  | ApplicTP'(proc , args) -> let index = (string_of_int (getIndex a)) in
                               "push qword SOB_NIL_ADDRESS\n" ^
                               (List.fold_right (fun x acc-> ((acc ^ makeAssmCode consts fvars lam_i x) ^ "push rax \n")) args "") ^ 
                               "push " ^ (string_of_int (List.length args)) ^ " \n" ^
@@ -357,12 +354,12 @@ let rec makeAssmCode consts fvars lam_i e =
                               
                               "CLOSURE_CODE r11 , rax\n" ^
                               "mov rbp, r15\n" ^
-                              "jmp r11\n" ^
-                              "add rsp, 8*1 \n" ^
+                              "jmp r11\n" 
+                              (* "add rsp, 8*1 \n" ^
                               "pop rbx\n" ^
                               "inc rbx\n" ^
                               "shl rbx, 3\n" ^
-                              "add rsp, rbx\n" 
+                              "add rsp, rbx\n"  *)
   | _ -> "AAAAAA" ;;   
 
   let rec p ls =

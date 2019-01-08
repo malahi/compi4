@@ -10,7 +10,8 @@ let string_to_asts s = List.map Semantics.run_semantics
                          (Tag_Parser.tag_parse_expressions
                             (Reader.read_sexprs s));;
 
-let primitive_names_to_labels = ["boolean?", "is_boolean"; "float?", "is_float"; "integer?", "is_integer"; "pair?", "is_pair";
+let primitive_names_to_labels = 
+  ["boolean?", "is_boolean"; "float?", "is_float"; "integer?", "is_integer"; "pair?", "is_pair";
    "null?", "is_null"; "char?", "is_char"; "vector?", "is_vector"; "string?", "is_string";
    "procedure?", "is_procedure"; "symbol?", "is_symbol"; "string-length", "string_length";
    "string-ref", "string_ref"; "string-set!", "string_set"; "make-string", "make_string";
@@ -107,7 +108,7 @@ exception X_missing_input_file;;
 
 let rec p ls =
   match ls with
-  | (x , i) :: cdr -> x ^ " " ^  "  "  ^ (string_of_int i) ^ p cdr 
+  | (x , _) :: cdr -> x ^ " " ^ p cdr 
   | _ -> "";; 
 
 try

@@ -3,8 +3,82 @@ apply:
     mov r15, rbp
     mov rbp, rsp
 
-    mov r8, [rbp + 8*3] ; arg
+    mov r8, [rbp + 8*3]  ; size of args
+    mov r9, [rbp + 8*(3 + r8)] ; get list
 
+    mov rdx, 0   ; counter
+    mov rdi, rdx 
+    push SOB_NIL_ADDRESS ; magic
+    cmp r9, SOB_NIL_ADDRESS
+    je .end_swap
+
+   
+    .loop:
+        inc rdx
+        CAR r10, r9
+        push r10
+
+        CDR r11, r9
+        mov r9, r11
+
+        cmp r9, SOB_NIL_ADDRESS
+        jne .loop
+    .end:
+    mov rdi, rdx   ; backup list size
+
+    mov r8, rsp
+    mov r9, rbp
+    sub r9, 16 
+
+    .swap:
+        cmp r8, r9
+        jge .end_swap
+
+        mov r10,  [r8]
+        mov r11,  [r9]
+        mov [r8], r11
+        mov [r9], r10
+        
+        add r8, 8
+        sub r9, 8
+
+        jmp .swap
+    .end_swap:
+
+    mov rdx, [rbp + 3*8]
+    sub rdx, 1
+
+    .args:
+        push qword [rbp + 8*(3 + rdx)]
+        dec rdx
+        cmp rdx, 0
+        jne .args
+    .end_args:
+
+    pop r8   ; function
+    mov r9, [rbp + 8*3]
+    sub r9, 2
+    add r9, rdi
+
+    push r9  ; push new size
+    CLOSURE_CODE r11 , r8
+    CLOSURE_ENV r12 , r8
+    push r12
+    push qword [rbp + 1*8]
+    
+    add r9, 5
+    mov r10, [rbp + 3*8]
+    add r10, 5
+
+    APPLY_SHIFT_FRAME r9 , r10 
+
+    mov rbp, r15
+    
+    mov rax, 8
+    mul r10
+    add rsp, rax
+
+    jmp r11
 
 cons:
     push rbp
@@ -13,7 +87,6 @@ cons:
     mov rdi, PVAR(0)
     mov rsi, PVAR(1)
     MAKE_PAIR (rax, rdi, rsi)
-    jmp .return
 
     leave
     ret
@@ -24,7 +97,6 @@ car:
 
     mov rdi, PVAR(0)
     CAR rax, rdi
-    jmp .return
 
     leave
     ret
@@ -35,7 +107,6 @@ cdr:
 
     mov rdi, PVAR(0)
     CDR rax, rdi
-    jmp .return
 
     leave
     ret
@@ -64,6 +135,10 @@ set_cdr:
 
     leave
     ret  
+
+
+
+
 
 
 
@@ -523,8 +598,8 @@ bin_add:
     addsd xmm0, xmm1
 
     pop r8
-    cmp r8, 0
-    je .return_float
+    cmp r8, 3
+    jne .return_float
 
     cvttsd2si rsi, xmm0
     MAKE_INT(rax, rsi)
@@ -603,8 +678,8 @@ bin_mul:
     mulsd xmm0, xmm1
 
     pop r8
-    cmp r8, 0
-    je .return_float
+    cmp r8, 3
+    jne .return_float
 
     cvttsd2si rsi, xmm0
     MAKE_INT(rax, rsi)
@@ -683,8 +758,8 @@ bin_sub:
     subsd xmm0, xmm1
 
     pop r8
-    cmp r8, 0
-    je .return_float
+    cmp r8, 3
+    jne .return_float
 
     cvttsd2si rsi, xmm0
     MAKE_INT(rax, rsi)
@@ -763,8 +838,8 @@ bin_div:
     divsd xmm0, xmm1
 
     pop r8
-    cmp r8, 0
-    je .return_float
+    cmp r8, 3
+    jne .return_float
 
     cvttsd2si rsi, xmm0
     MAKE_INT(rax, rsi)
@@ -843,8 +918,8 @@ bin_lt:
     cmpltsd xmm0, xmm1
 
     pop r8
-    cmp r8, 0
-    je .return_float
+    cmp r8, 3
+    jne .return_float
 
     cvttsd2si rsi, xmm0
     MAKE_INT(rax, rsi)
@@ -935,8 +1010,8 @@ bin_equ:
     cmpeqsd xmm0, xmm1
 
     pop r8
-    cmp r8, 0
-    je .return_float
+    cmp r8, 3
+    jne .return_float
 
     cvttsd2si rsi, xmm0
     MAKE_INT(rax, rsi)
