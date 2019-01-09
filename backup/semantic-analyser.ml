@@ -58,14 +58,14 @@ let rec expr'_eq e1 e2 =
                        
 exception X_syntax_error;;
 
-module type SEMANTICS = sig
+(* module type SEMANTICS = sig
   val run_semantics : expr -> expr'
   val annotate_lexical_addresses : expr -> expr'
   val annotate_tail_calls : expr' -> expr'
   val box_set : expr' -> expr'
 end;;
 
-module Semantics : SEMANTICS = struct
+module Semantics : SEMANTICS = struct *)
 
 let l_without_last l =
   List.rev (List.tl (List.rev l)) 
@@ -253,7 +253,7 @@ let args_to_change expr =
     | LambdaSimple'(param_l , expr_tag) -> List.map (fun y -> (y , (get_index y param_l 0))) (List.filter (fun x -> need_box ls x) param_l)
     | LambdaOpt'(param_l , p_last , expr_tag) -> List.map (fun y -> (y , (get_index y (List.append param_l [p_last]) 0))) (List.filter (fun x -> need_box ls x) (List.append param_l [p_last]))
     | _ -> [];;
-                     
+
 let rec change_code arg bound expr = 
   match expr , bound with
   | LambdaSimple'(param_l , expr_tag) , _ -> LambdaSimple'(param_l , change_code arg (bound + 1) expr_tag)  
@@ -290,6 +290,8 @@ let make_my_box_h arg_to_change expr =
      
 let make_my_box expr =
   let arg_to_change = args_to_change expr in
+  (print_string "printing");
+    (print_string (String.concat " " (List.map (fun (x , _) -> x) arg_to_change) ));
     let new_exp = make_my_box_h (List.map (fun x -> fst x) arg_to_change) expr in
         match arg_to_change , new_exp with
         | [] , _-> new_exp
@@ -301,7 +303,7 @@ let rec box = function
   | Seq'(l) -> Seq'(List.map box l)
   | Def'(var , expr) -> Def'(var , box expr)
   | LambdaSimple'(x , y) ->  make_my_box (LambdaSimple'(x , (box y)))
-  | LambdaOpt'(x , y , z) -> make_my_box (LambdaOpt'(x , y , (box z))) 
+  | LambdaOpt'(x , y , z) -> make_my_box (LambdaOpt'(x , y , z)) 
   | Set'(var , expr) -> Set'(var , box expr) 
   | Or' (l) -> Or'(List.map box l)
   | If'(test , dit , dif) -> If'((box test) , (box dit) , (box dif))
@@ -309,6 +311,46 @@ let rec box = function
   | ApplicTP'(proc , p_l) -> ApplicTP'((box proc) , (List.map box p_l))
   | BoxSet'(var , expr) -> BoxSet'(var , box expr)
   | x -> x;; 
+
+  (* LambdaSimple' (["null?"; "car"; "cdr"; "cons"],
+    LambdaOpt' ([], "args",
+     ApplicTP'
+      (Applic'
+        (LambdaSimple' (["f"],
+          Seq'
+           [Set' (Var' (VarParam ("f", 0)),
+             LambdaSimple' (["ls"; "args"],
+              If'
+               (Applic' (Var' (VarBound ("null?", 2, 0)),
+                 [Var' (VarParam ("args", 1))]),
+               Var' (VarParam ("ls", 0)),
+               ApplicTP'
+                (Applic'
+                  (LambdaSimple' (["g"],
+                    Seq'
+                     [Set' (Var' (VarParam ("g", 0)),
+                       LambdaSimple' (["ls"],
+                        If'
+                         (Applic' (Var' (VarBound ("null?", 4, 0)),
+                           [Var' (VarParam ("ls", 0))]),
+                         ApplicTP' (Var' (VarBound ("f", 2, 0)),
+                          [Applic' (Var' (VarBound ("car", 4, 1)),
+                            [Var' (VarBound ("args", 1, 1))]);
+                           Applic' (Var' (VarBound ("cdr", 4, 2)),
+                            [Var' (VarBound ("args", 1, 1))])]),
+                         ApplicTP' (Var' (VarBound ("cons", 4, 3)),
+                          [Applic' (Var' (VarBound ("car", 4, 1)),
+                            [Var' (VarParam ("ls", 0))]);
+                           Applic' (Var' (VarBound ("g", 0, 0)),
+                            [Applic' (Var' (VarBound ("cdr", 4, 2)),
+                              [Var' (VarParam ("ls", 0))])])]))));
+                      Var' (VarParam ("g", 0))]),
+                  [Const' (Sexpr (Symbol "whatever"))]),
+                [Var' (VarParam ("ls", 0))]))));
+            Var' (VarParam ("f", 0))]),
+        [Const' (Sexpr (Symbol "whatever"))]),
+      [Const' (Sexpr Nil); Var' (VarParam ("args", 0))]))) *)
+
 
 let annotate_lexical_addresses e = add_helper [] e;;
 
@@ -321,5 +363,5 @@ let run_semantics expr =
     (annotate_tail_calls
        (annotate_lexical_addresses expr));;
   
-end;; 
+(* end;;  *)
 (* struct Semantics *)

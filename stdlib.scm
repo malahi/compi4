@@ -51,7 +51,7 @@
 (define not
   (let ((eq? eq?))
     (lambda (x)
-      (if (eq? x #t) #f #t))))
+      (if (eq? x #f) #t #f))))
 
 (define number?
   (let ((float? float?) (integer? integer?))

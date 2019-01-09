@@ -249,13 +249,16 @@
 
 
 %macro APPLY_SHIFT_FRAME 2 
+	push r8
+	push r9
+	push r10
 
 	mov rsi, %2
-	
+	mov rdi, %1
 	mov rbx, 1
 	mov r8, rbx
 	%%loop:
-		cmp %1, 0
+		cmp rdi, 0
 		je %%end
 		dec rsi 
 
@@ -270,16 +273,17 @@
 		inc rbx
 		mov r8, rbx
 		
-		dec %1
-		; %assign i i+1 
+		dec rdi
+	
 		jmp %%loop
 	%%end:
-
+	pop r10
+	pop r9
+	pop r8
 %endmacro
 
 %macro MAKE_LIST 2
 	push rdi
-	push r15
 	push r14
 	push r13
 
@@ -298,7 +302,6 @@
 	%%end:
 	pop r13
 	pop r14
-	pop r15
 	pop rdi
 %endmacro
 
@@ -310,6 +313,8 @@
 %rotate 1 
 %endrep 
 %endmacro
+
+
 	;===================================================================================
 extern exit, printf, malloc
 global write_sob, write_sob_if_not_void

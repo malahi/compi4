@@ -7,6 +7,7 @@ module type CODE_GEN = sig
 end;; 
 
 let lam_label_i = ref 1;;
+let lam_opt_label_i = ref 1;;
 let or_label_i  = ref 1;;
 let if_label_i  = ref 1;;
 let app_label_i  = ref 1;;
@@ -29,12 +30,12 @@ let addToIndex = function
   | Sexpr(Vector(x)) -> 9 + 8*(List.length x)
   | _ -> 0;;
 
-let getVarTableIndex ls var =
-  let var = List.filter (fun x -> (match x with | ((v),_) -> v = var)) ls in
-   match var , ls with
-    | (_,index) :: _ , _ -> index
-    | _ , [] -> 0 
-    | _ , _-> 0;;
+let rec getVarTableIndex ls var =
+  match ls with
+  | (x , i) :: cdr  -> (match x = var with
+                        | true -> i
+                        | false -> getVarTableIndex cdr var)
+  | [] -> -1;;
 
 let getConstTableIndex ls value =
  let var = List.filter (fun x -> (match x with | ((v),_) -> v = value)) ls in
@@ -162,9 +163,9 @@ let rec makeAssmCode consts fvars lam_i e =
   | BoxSet'(v , eps) -> (makeAssmCode consts fvars lam_i eps) ^ 
                         "push rax \n" ^
                         (makeAssmCode consts fvars lam_i (Var'(v))) ^ 
-                        "pop qword [rax] \n
-                         mov rax, SOB_VOID_ADDRESS\n"
-  | Applic'(proc, args) -> let index = (string_of_int (getIndex a)) in
+                        "pop qword [rax] \n" ^
+                         "mov rax, SOB_VOID_ADDRESS\n"
+  | Applic'(proc, args) -> let index = (string_of_int (getIndex app_label_i)) in
                            "push qword SOB_NIL_ADDRESS\n" ^
                            (List.fold_right (fun x acc-> ((acc ^ makeAssmCode consts fvars lam_i x) ^ "push rax \n")) args "") ^ 
                            "push " ^ (string_of_int (List.length args)) ^ " \n" ^
@@ -183,7 +184,7 @@ let rec makeAssmCode consts fvars lam_i e =
                            "shl rbx, 3\n" ^
                            "add rsp, rbx\n"                     
 
-  | LambdaSimple'(params , body) -> let label = (string_of_int (getIndex a)) in
+  | LambdaSimple'(params , body) -> let label = (string_of_int (getIndex lam_label_i)) in
                                     ";------------- copy env " ^ label ^ " ----------------\n" ^
                                     "COPY_ENV " ^ (string_of_int (8*(lam_i + 1))) ^ " , " ^ (string_of_int ((lam_i + 1))) ^ "\n" ^
                                     "mov r15, r14\n" ^
@@ -201,10 +202,10 @@ let rec makeAssmCode consts fvars lam_i e =
                                     "mov r12, 8*4\n" ^
                                     "add r10, r12\n" ^
                                      "mov r11, qword [rbp + 8*3]\n" ^
-                                   
+                                     "inc r11\n" ^
                                      " cmp r11, 0\n" ^
                                      " je pend" ^ label ^ "\n" ^
-                                     "inc r11\n" ^
+                                     
                                      "ploop" ^ label ^ ":\n" ^
                                      " cmp r11, 0\n" ^
                                     " je pend" ^ label ^ "\n" ^
@@ -226,7 +227,7 @@ let rec makeAssmCode consts fvars lam_i e =
                                     " leave\n" ^
                                     " ret\n" ^
                                     "Lcont" ^ label ^ ":\n"
-  | LambdaOpt'(params, opt , body) -> let label = (string_of_int (getIndex a)) in
+  | LambdaOpt'(params, opt , body) -> let label = (string_of_int (getIndex lam_label_i)) in
                                     ";------------- copy env " ^ label ^ " ----------------\n" ^                                  
                                     "COPY_ENV " ^ (string_of_int (8*(lam_i + 1))) ^ " , " ^ (string_of_int ((lam_i + 1))) ^ "\n" ^
                                     "mov r15, r14\n" ^
@@ -244,9 +245,10 @@ let rec makeAssmCode consts fvars lam_i e =
                                     "mov r12, 8*4\n" ^
                                     "add r10, r12\n" ^
                                     "mov r11, qword [rbp + 8*3]\n" ^
+                                    "inc r11\n" ^
                                     " cmp r11, 0\n" ^
                                     " je pend" ^ label ^ "\n" ^
-                                    "inc r11\n" ^
+                                    
                                     "ploop" ^ label ^ ":\n" ^
                                     " cmp r11, 0\n" ^
                                     " je pend" ^ label ^ "\n" ^
@@ -265,7 +267,8 @@ let rec makeAssmCode consts fvars lam_i e =
                                     " push rbp\n" ^
                                     " mov rbp, rsp\n" ^
                                     ";------ opt ----------------- \n" ^
-                                    " mov r8, [rbp + 8*3]\n" ^
+                                    " mov r8,  [rbp + 8*3]\n" ^
+                                    " mov r15, [rbp + 8*3]\n" ^
                                     " mov r10, r8\n" ^
                                     " mov r11, " ^ (string_of_int ((List.length params))) ^ "\n" ^    
                                     " sub r10, r11\n" ^
@@ -274,40 +277,25 @@ let rec makeAssmCode consts fvars lam_i e =
                                     " je end_opt" ^ label ^ "\n" ^
                                     
                                     "mov qword [rbp + 8*3], " ^ (string_of_int ((List.length params) + 1)) ^ "\n" ^
-                                    "mov rax, r10\n" ^
-                                    "dec rax\n" ^
-                                    "mov rdx, 8\n" ^
-                                    "mul rdx\n" ^
-                                    "mov r15, rax\n" ^
-                                    "sub r15, 8\n" ^
-                                    "MALLOC r11, rax\n" ^
-                                    "add r11, r15\n" ^
-                                    "mov r12, r8\n" ^
-                                    "add r12, 3\n" ^
-                                    
-                                    "mov rax, r12\n" ^
-                                    "mov rdx, 8\n" ^
-                                    "mul rdx\n" ^
-                                    "mov r12, rax\n" ^
-                                    "mov r13, rbp\n" ^
-                                    "add r13, r12\n" ^
-                                    "mov r9, r10\n" ^
-                                    "dec r9\n" ^
-                                    "opt_loop" ^ label ^ ":\n" ^
+                                    "mov r9, [rbp + 8*(3+r8)]\n" ^    
+                                    "MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)\n" ^
+                                    "dec r10\n" ^
+                                    "make_ls" ^ label ^ ":\n" ^
                                     " cmp r10, 0\n" ^
-                                    " je opt_end_loop" ^ label ^ "\n" ^
-                                    " mov r14, [r13]\n" ^
-                                    " mov qword [r11], r14\n" ^
-                                    " sub r13, 8\n" ^
-                                    " sub r11, 8\n" ^
+                                    " je end_make_ls" ^ label ^ "\n" ^
+
+                                    " dec r8\n" ^
+                                    " mov r9, [rbp + 8*(3+r8)]\n" ^    
+                                    " MAKE_PAIR(r12 , r9 , r11)\n" ^
+                                    " mov r11, r12\n" ^
                                     " dec r10\n" ^
-                                    " jmp opt_loop" ^ label ^ "\n" ^
-                                    "opt_end_loop" ^ label ^ ":\n" ^
-                                    " add r11, 8\n" ^
-                                    "add r11, r15\n" ^
-                                    "MAKE_LIST r11 , r9\n" ^
-                                    "mov [rbp + 8*(3+" ^ (string_of_int ((List.length params) + 1)) ^ ")], rdx\n" ^
-                                    "mov r11, r8\n" ^
+                                   
+                                    " jmp make_ls" ^ label ^ "\n" ^
+                                    " end_make_ls" ^ label ^ ":\n" ^
+                                    
+                                    "mov [rbp + 8*(3 + " ^ (string_of_int ((List.length params) + 1)) ^ ")] , r11\n" ^
+
+                                    "mov r11, r15\n" ^
                                     "sub r11," ^ (string_of_int ((List.length params) + 1)) ^ "\n" ^
                                     
                                     "add rbp, 8*(5 +" ^ (string_of_int (List.length params)) ^ "  )\n" ^
@@ -317,7 +305,7 @@ let rec makeAssmCode consts fvars lam_i e =
                                     "mov rdx, 8\n" ^
                                     "mul rdx\n" ^
                                     "add rsp, rax\n" ^
-                                    "mov rbp, rsp\n" ^
+                                    "mov rbp, rsp\n" ^ 
                                     ";------ end opt ------------- \n" ^
                                     " end_opt" ^ label ^ ":\n" ^
                                     " " ^ (makeAssmCode consts fvars (lam_i + 1) body) ^ "\n" ^
@@ -325,7 +313,7 @@ let rec makeAssmCode consts fvars lam_i e =
                                     " ret\n" ^
                                     "Lcont" ^ label ^ ":\n"
   
-  | ApplicTP'(proc , args) -> let index = (string_of_int (getIndex a)) in
+  | ApplicTP'(proc , args) -> let index = (string_of_int (getIndex app_label_i)) in
                               "push qword SOB_NIL_ADDRESS\n" ^
                               (List.fold_right (fun x acc-> ((acc ^ makeAssmCode consts fvars lam_i x) ^ "push rax \n")) args "") ^ 
                               "push " ^ (string_of_int (List.length args)) ^ " \n" ^
@@ -360,7 +348,7 @@ let rec makeAssmCode consts fvars lam_i e =
                               "inc rbx\n" ^
                               "shl rbx, 3\n" ^
                               "add rsp, rbx\n"  *)
-  | _ -> "AAAAAA" ;;   
+  | _ -> "ERROR" ;;   
 
   let rec p ls =
     match ls with

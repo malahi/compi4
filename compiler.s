@@ -24,7 +24,7 @@
 %define TYPE_SIZE 1
 %define WORD_SIZE 8
 	
-%define KB(n) n          ;;n*1024
+%define KB(n) n ;n*1024
 %define MB(n) 1024*KB(n)
 %define GB(n) 1024*MB(n)
 
@@ -313,6 +313,7 @@
 %rotate 1 
 %endrep 
 %endmacro
+
 	;===================================================================================
 extern exit, printf, malloc
 global write_sob, write_sob_if_not_void

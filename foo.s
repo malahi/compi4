@@ -19,7 +19,9 @@ MAKE_LITERAL_INT(0)
 MAKE_LITERAL_INT(1)
 MAKE_LITERAL_STRING 116,104,105,115,32,115,104,111,117,108,100,32,98,101,32,97,110,32,101,114,114,111,114,44,32,98,117,116,32,121,111,117,32,100,111,110,39,116,32,115,117,112,112,111,114,116,32,101,120,99,101,112,116,105,111,110,115
 MAKE_LITERAL_CHAR(0)
-MAKE_LITERAL_INT(3)
+MAKE_LITERAL_STRING 102,105,110,105,115,104
+MAKE_LITERAL_SYMBOL( const_tbl + 118)
+MAKE_LITERAL_INT(1000)
 
 ;;; These macro definitions are required for the primitive
 ;;; definitions in the epilogue to work properly
@@ -30,6 +32,7 @@ MAKE_LITERAL_INT(3)
 %define sob_true SOB_TRUE_ADDRESS
 
 fvar_tbl:
+dq T_UNDEFINED
 dq T_UNDEFINED
 dq T_UNDEFINED
 dq T_UNDEFINED
@@ -163,17 +166,17 @@ code_fragment:
     mov [fvar_tbl + 256], rax
     MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, bin_equ)
     mov [fvar_tbl + 112], rax
-    MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, car)
+    MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, l_car)
     mov [fvar_tbl + 80], rax
-    MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, cdr)
+    MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, l_cdr)
     mov [fvar_tbl + 88], rax
     MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, set_car)
     mov [fvar_tbl + 48], rax
     MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, set_cdr)
     mov [fvar_tbl + 56], rax
-    MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, cons)
+    MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, l_cons)
     mov [fvar_tbl + 96], rax
-    MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, apply)
+    MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, l_apply)
     mov [fvar_tbl + 224], rax
 
 push qword SOB_NIL_ADDRESS
@@ -186,8 +189,44 @@ push rax
 mov rax, qword [fvar_tbl + 72] 
 push rax 
 push 4 
-;------------- copy env 2 ----------------
+;------------- copy env 1 ----------------
 COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 1 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend1
+ploop1:
+ cmp r11, 0
+ je pend1
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop1
+pend1:
+;---------------- make closure 1 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode1)
+jmp Lcont1
+Lcode1:
+ push rbp
+ mov rbp, rsp
+ ;------------- copy env 2 ----------------
+COPY_ENV 16 , 2
 mov r15, r14
 ;---------------- copy args 2 ----------------
 mov r11, qword [rbp + 8*3]
@@ -202,9 +241,9 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
+inc r11
  cmp r11, 0
  je pend2
-inc r11
 ploop2:
  cmp r11, 0
  je pend2
@@ -222,8 +261,52 @@ jmp Lcont2
 Lcode2:
  push rbp
  mov rbp, rsp
- ;------------- copy env 3 ----------------
-COPY_ENV 16 , 2
+;------ opt ----------------- 
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
+ mov r10, r8
+ mov r11, 0
+ sub r10, r11
+ cmp r10, 0
+ je end_opt2
+mov qword [rbp + 8*3], 1
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls2:
+ cmp r10, 0
+ je end_make_ls2
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
+ dec r10
+ jmp make_ls2
+ end_make_ls2:
+mov [rbp + 8*(3 + 1)] , r11
+mov r11, r15
+sub r11,1
+add rbp, 8*(5 +0  )
+SHIFT_FRAME (4+1) , r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+;------ end opt ------------- 
+ end_opt2:
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+mov rax , const_tbl + 1
+push rax 
+push 2 
+push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 23
+push rax 
+push 1 
+;------------- copy env 3 ----------------
+COPY_ENV 24 , 3
 mov r15, r14
 ;---------------- copy args 3 ----------------
 mov r11, qword [rbp + 8*3]
@@ -238,9 +321,9 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
+inc r11
  cmp r11, 0
  je pend3
-inc r11
 ploop3:
  cmp r11, 0
  je pend3
@@ -258,69 +341,126 @@ jmp Lcont3
 Lcode3:
  push rbp
  mov rbp, rsp
-;------ opt ----------------- 
- mov r8, [rbp + 8*3]
- mov r10, r8
- mov r11, 0
- sub r10, r11
- cmp r10, 0
- je end_opt3
-mov qword [rbp + 8*3], 1
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop3:
- cmp r10, 0
- je opt_end_loop3
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
- dec r10
- jmp opt_loop3
-opt_end_loop3:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+1)], rdx
-mov r11, r8
-sub r11,1
-add rbp, 8*(5 +0  )
-SHIFT_FRAME (4+1) , r11
+ MALLOC rsi , 8
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov [rsi], rax
+mov rax, rsi
+mov qword [rbp + 8*( 4 + 0)] , rax 
+mov rax, SOB_VOID_ADDRESS 
+;------------- copy env 4 ----------------
+COPY_ENV 32 , 4
+mov r15, r14
+;---------------- copy args 4 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
 mov rax, r11
 mov rdx, 8
 mul rdx
-add rsp, rax
-mov rbp, rsp
-;------ end opt ------------- 
- end_opt3:
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend4
+ploop4:
+ cmp r11, 0
+ je pend4
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop4
+pend4:
+;---------------- make closure 4 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode4)
+jmp Lcont4
+Lcode4:
+ push rbp
+ mov rbp, rsp
  push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next14
+mov rax, SOB_FALSE_ADDRESS
+ret
+next14:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse1 
+ mov rax, qword [rbp + 8 * (4 + 0)] 
+jmp Lexit1 
+ 
+                              Lelse1: 
+push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
-mov rax , const_tbl + 1
-push rax 
-push 2 
+push 1 
 push qword SOB_NIL_ADDRESS
 mov rax , const_tbl + 23
 push rax 
 push 1 
+;------------- copy env 5 ----------------
+COPY_ENV 40 , 5
+mov r15, r14
+;---------------- copy args 5 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend5
+ploop5:
+ cmp r11, 0
+ je pend5
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop5
+pend5:
+;---------------- make closure 5 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode5)
+jmp Lcont5
+Lcode5:
+ push rbp
+ mov rbp, rsp
+ MALLOC rsi , 8
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov [rsi], rax
+mov rax, rsi
+mov qword [rbp + 8*( 4 + 0)] , rax 
+mov rax, SOB_VOID_ADDRESS 
 ;------------- copy env 6 ----------------
-COPY_ENV 24 , 3
+COPY_ENV 48 , 6
 mov r15, r14
 ;---------------- copy args 6 ----------------
 mov r11, qword [rbp + 8*3]
@@ -335,9 +475,9 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
+inc r11
  cmp r11, 0
  je pend6
-inc r11
 ploop6:
  cmp r11, 0
  je pend6
@@ -355,148 +495,6 @@ jmp Lcont6
 Lcode6:
  push rbp
  mov rbp, rsp
- ;------------- copy env 7 ----------------
-COPY_ENV 32 , 4
-mov r15, r14
-;---------------- copy args 7 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend7
-inc r11
-ploop7:
- cmp r11, 0
- je pend7
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop7
-pend7:
-;---------------- make closure 7 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode7)
-jmp Lcont7
-Lcode7:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next22
-mov rax, SOB_FALSE_ADDRESS
-ret
-next22:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse8 
- mov rax, qword [rbp + 8 * (4 + 0)] 
-jmp Lexit8 
- 
-                              Lelse8: 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 23
-push rax 
-push 1 
-;------------- copy env 11 ----------------
-COPY_ENV 40 , 5
-mov r15, r14
-;---------------- copy args 11 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend11
-inc r11
-ploop11:
- cmp r11, 0
- je pend11
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop11
-pend11:
-;---------------- make closure 11 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode11)
-jmp Lcont11
-Lcode11:
- push rbp
- mov rbp, rsp
- ;------------- copy env 12 ----------------
-COPY_ENV 48 , 6
-mov r15, r14
-;---------------- copy args 12 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend12
-inc r11
-ploop12:
- cmp r11, 0
- je pend12
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop12
-pend12:
-;---------------- make closure 12 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode12)
-jmp Lcont12
-Lcode12:
- push rbp
- mov rbp, rsp
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
@@ -506,10 +504,10 @@ mov rax, qword [rax + 8*4]
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next21
+je next13
 mov rax, SOB_FALSE_ADDRESS
 ret
-next21:
+next13:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -518,7 +516,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse13 
+je Lelse2 
  push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8*2] 
@@ -531,10 +529,10 @@ mov rax, qword [rax + 8*4]
 mov rax, qword [rax + 8*2] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next19
+je next11
 mov rax, SOB_FALSE_ADDRESS
 ret
-next19:
+next11:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -554,10 +552,10 @@ mov rax, qword [rax + 8*4]
 mov rax, qword [rax + 8*1] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next20
+je next12
 mov rax, SOB_FALSE_ADDRESS
 ret
-next20:
+next12:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -570,12 +568,13 @@ push 2
 mov rax, qword [rbp + 8*2] 
 mov rax, qword [rax + 8*2] 
 mov rax, qword [rax + 8*0] 
+mov rax, qword [rax] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next18
+je t_next10
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next18:
+t_next10:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -592,9 +591,9 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-jmp Lexit13 
+jmp Lexit2 
  
-                              Lelse13: 
+                              Lelse2: 
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
@@ -606,10 +605,10 @@ mov rax, qword [rax + 8*4]
 mov rax, qword [rax + 8*2] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next16
+je next8
 mov rax, SOB_FALSE_ADDRESS
 ret
-next16:
+next8:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -622,12 +621,13 @@ push 1
 mov rax, qword [rbp + 8*2] 
 mov rax, qword [rax + 8*0] 
 mov rax, qword [rax + 8*0] 
+mov rax, qword [rax] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next15
+je next7
 mov rax, SOB_FALSE_ADDRESS
 ret
-next15:
+next7:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -645,10 +645,10 @@ mov rax, qword [rax + 8*4]
 mov rax, qword [rax + 8*1] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next17
+je next9
 mov rax, SOB_FALSE_ADDRESS
 ret
-next17:
+next9:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -663,10 +663,10 @@ mov rax, qword [rax + 8*4]
 mov rax, qword [rax + 8*3] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next14
+je t_next6
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next14:
+t_next6:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -683,65 +683,21 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-Lexit13: 
-
- leave
- ret
-Lcont12:
-mov qword [rbp + 8*( 4 + 0)] , rax 
-mov rax, SOB_VOID_ADDRESS 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-
- leave
- ret
-Lcont11:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next10
-mov rax, SOB_FALSE_ADDRESS
-ret
-next10:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next9
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next9:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-Lexit8: 
-
- leave
- ret
-Lcont7:
-mov qword [rbp + 8*( 4 + 0)] , rax 
-mov rax, SOB_VOID_ADDRESS 
-mov rax, qword [rbp + 8 * (4 + 0)] 
+Lexit2: 
 
  leave
  ret
 Lcont6:
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+pop qword [rax] 
+mov rax, SOB_VOID_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov rax, qword [rax] 
+
+ leave
+ ret
+Lcont5:
 mov sil, [rax]
 cmp sil, T_CLOSURE
 je next5
@@ -766,6 +722,56 @@ push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
 add r10, 5
 mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+Lexit1: 
+
+ leave
+ ret
+Lcont4:
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+pop qword [rax] 
+mov rax, SOB_VOID_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov rax, qword [rax] 
+
+ leave
+ ret
+Lcont3:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next3
+mov rax, SOB_FALSE_ADDRESS
+ret
+next3:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next2
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next2:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
 SHIFT_FRAME (5 + 2) , r10
 mov rdi , rax
 mov rax, r10
@@ -780,11 +786,11 @@ jmp r11
 
  leave
  ret
-Lcont3:
+Lcont2:
 
  leave
  ret
-Lcont2:
+Lcont1:
 mov sil, [rax]
 cmp sil, T_CLOSURE
 je next1
@@ -807,6 +813,1698 @@ push qword SOB_NIL_ADDRESS
 mov rax, qword [fvar_tbl + 112] 
 push rax 
 push 1 
+;------------- copy env 7 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 7 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend7
+ploop7:
+ cmp r11, 0
+ je pend7
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop7
+pend7:
+;---------------- make closure 7 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode7)
+jmp Lcont7
+Lcode7:
+ push rbp
+ mov rbp, rsp
+ ;------------- copy env 8 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 8 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend8
+ploop8:
+ cmp r11, 0
+ je pend8
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop8
+pend8:
+;---------------- make closure 8 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode8)
+jmp Lcont8
+Lcode8:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 32
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next16
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next16:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont8:
+
+ leave
+ ret
+Lcont7:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next15
+mov rax, SOB_FALSE_ADDRESS
+ret
+next15:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 104], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+;------------- copy env 9 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 9 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend9
+ploop9:
+ cmp r11, 0
+ je pend9
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop9
+pend9:
+;---------------- make closure 9 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode9)
+jmp Lcont9
+Lcode9:
+ push rbp
+ mov rbp, rsp
+;------ opt ----------------- 
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
+ mov r10, r8
+ mov r11, 0
+ sub r10, r11
+ cmp r10, 0
+ je end_opt9
+mov qword [rbp + 8*3], 1
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls9:
+ cmp r10, 0
+ je end_make_ls9
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
+ dec r10
+ jmp make_ls9
+ end_make_ls9:
+mov [rbp + 8*(3 + 1)] , r11
+mov r11, r15
+sub r11,1
+add rbp, 8*(5 +0  )
+SHIFT_FRAME (4+1) , r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+;------ end opt ------------- 
+ end_opt9:
+ mov rax, qword [rbp + 8 * (4 + 0)] 
+
+ leave
+ ret
+Lcont9:
+mov qword [fvar_tbl + 120], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 88] 
+push rax 
+mov rax, qword [fvar_tbl + 136] 
+push rax 
+mov rax, qword [fvar_tbl + 72] 
+push rax 
+push 3 
+;------------- copy env 10 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 10 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend10
+ploop10:
+ cmp r11, 0
+ je pend10
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop10
+pend10:
+;---------------- make closure 10 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode10)
+jmp Lcont10
+Lcode10:
+ push rbp
+ mov rbp, rsp
+ ;------------- copy env 11 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 11 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend11
+ploop11:
+ cmp r11, 0
+ je pend11
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop11
+pend11:
+;---------------- make closure 11 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode11)
+jmp Lcont11
+Lcode11:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next21
+mov rax, SOB_FALSE_ADDRESS
+ret
+next21:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+ jne orLexit3 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next20
+mov rax, SOB_FALSE_ADDRESS
+ret
+next20:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse4 
+ push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*2] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next19
+mov rax, SOB_FALSE_ADDRESS
+ret
+next19:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 1 
+mov rax, qword [fvar_tbl + 128] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next18
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next18:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+jmp Lexit4 
+ 
+                              Lelse4: 
+mov rax , const_tbl + 2
+Lexit4: 
+orLexit3: 
+
+ leave
+ ret
+Lcont11:
+
+ leave
+ ret
+Lcont10:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next17
+mov rax, SOB_FALSE_ADDRESS
+ret
+next17:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 128], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 152] 
+push rax 
+mov rax, qword [fvar_tbl + 88] 
+push rax 
+mov rax, qword [fvar_tbl + 136] 
+push rax 
+mov rax, qword [fvar_tbl + 72] 
+push rax 
+push 4 
+;------------- copy env 12 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 12 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend12
+ploop12:
+ cmp r11, 0
+ je pend12
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop12
+pend12:
+;---------------- make closure 12 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode12)
+jmp Lcont12
+Lcode12:
+ push rbp
+ mov rbp, rsp
+ ;------------- copy env 13 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 13 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend13
+ploop13:
+ cmp r11, 0
+ je pend13
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop13
+pend13:
+;---------------- make closure 13 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode13)
+jmp Lcont13
+Lcode13:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 23
+push rax 
+mov rax , const_tbl + 23
+push rax 
+push 2 
+;------------- copy env 14 ----------------
+COPY_ENV 24 , 3
+mov r15, r14
+;---------------- copy args 14 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend14
+ploop14:
+ cmp r11, 0
+ je pend14
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop14
+pend14:
+;---------------- make closure 14 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode14)
+jmp Lcont14
+Lcode14:
+ push rbp
+ mov rbp, rsp
+ MALLOC rsi , 8
+mov rax, qword [rbp + 8 * (4 + 1)] 
+mov [rsi], rax
+mov rax, rsi
+mov qword [rbp + 8*( 4 + 1)] , rax 
+mov rax, SOB_VOID_ADDRESS 
+mov rax , const_tbl + 32
+mov qword [rbp + 8*( 4 + 0)] , rax 
+mov rax, SOB_VOID_ADDRESS 
+;------------- copy env 15 ----------------
+COPY_ENV 32 , 4
+mov r15, r14
+;---------------- copy args 15 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend15
+ploop15:
+ cmp r11, 0
+ je pend15
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop15
+pend15:
+;---------------- make closure 15 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode15)
+jmp Lcont15
+Lcode15:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next28
+mov rax, SOB_FALSE_ADDRESS
+ret
+next28:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse5 
+ mov rax, qword [rbp + 8 * (4 + 1)] 
+jmp Lexit5 
+ 
+                              Lelse5: 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next27
+mov rax, SOB_FALSE_ADDRESS
+ret
+next27:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse6 
+ push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+mov rax , const_tbl + 41
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next25
+mov rax, SOB_FALSE_ADDRESS
+ret
+next25:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next26
+mov rax, SOB_FALSE_ADDRESS
+ret
+next26:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next24
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next24:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+jmp Lexit6 
+ 
+                              Lelse6: 
+mov rax , const_tbl + 50
+Lexit6: 
+Lexit5: 
+
+ leave
+ ret
+Lcont15:
+push rax 
+mov rax, qword [rbp + 8 * (4 + 1)] 
+pop qword [rax] 
+mov rax, SOB_VOID_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 32
+push rax 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8 * (4 + 1)] 
+mov rax, qword [rax] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next29
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next29:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont14:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next23
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next23:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont13:
+
+ leave
+ ret
+Lcont12:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next22
+mov rax, SOB_FALSE_ADDRESS
+ret
+next22:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 144], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 144] 
+push rax 
+mov rax, qword [fvar_tbl + 112] 
+push rax 
+mov rax, qword [fvar_tbl + 80] 
+push rax 
+mov rax, qword [fvar_tbl + 160] 
+push rax 
+mov rax, qword [fvar_tbl + 72] 
+push rax 
+push 5 
+;------------- copy env 16 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 16 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend16
+ploop16:
+ cmp r11, 0
+ je pend16
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop16
+pend16:
+;---------------- make closure 16 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode16)
+jmp Lcont16
+Lcode16:
+ push rbp
+ mov rbp, rsp
+ ;------------- copy env 17 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 17 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend17
+ploop17:
+ cmp r11, 0
+ je pend17
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop17
+pend17:
+;---------------- make closure 17 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode17)
+jmp Lcont17
+Lcode17:
+ push rbp
+ mov rbp, rsp
+;------ opt ----------------- 
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
+ mov r10, r8
+ mov r11, 1
+ sub r10, r11
+ cmp r10, 0
+ je end_opt17
+mov qword [rbp + 8*3], 2
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls17:
+ cmp r10, 0
+ je end_make_ls17
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
+ dec r10
+ jmp make_ls17
+ end_make_ls17:
+mov [rbp + 8*(3 + 2)] , r11
+mov r11, r15
+sub r11,2
+add rbp, 8*(5 +1  )
+SHIFT_FRAME (4+2) , r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+;------ end opt ------------- 
+ end_opt17:
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next36
+mov rax, SOB_FALSE_ADDRESS
+ret
+next36:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse7 
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 116
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next35
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next35:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+jmp Lexit7 
+ 
+                              Lelse7: 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*4] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next34
+mov rax, SOB_FALSE_ADDRESS
+ret
+next34:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax , const_tbl + 41
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next33
+mov rax, SOB_FALSE_ADDRESS
+ret
+next33:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse8 
+ push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*2] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next32
+mov rax, SOB_FALSE_ADDRESS
+ret
+next32:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next31
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next31:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+jmp Lexit8 
+ 
+                              Lelse8: 
+mov rax , const_tbl + 50
+Lexit8: 
+Lexit7: 
+
+ leave
+ ret
+Lcont17:
+
+ leave
+ ret
+Lcont16:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next30
+mov rax, SOB_FALSE_ADDRESS
+ret
+next30:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 160], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 72] 
+push rax 
+mov rax, qword [fvar_tbl + 80] 
+push rax 
+mov rax, qword [fvar_tbl + 168] 
+push rax 
+mov rax, qword [fvar_tbl + 144] 
+push rax 
+push 4 
+;------------- copy env 18 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 18 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend18
+ploop18:
+ cmp r11, 0
+ je pend18
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop18
+pend18:
+;---------------- make closure 18 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode18)
+jmp Lcont18
+Lcode18:
+ push rbp
+ mov rbp, rsp
+ ;------------- copy env 19 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 19 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend19
+ploop19:
+ cmp r11, 0
+ je pend19
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop19
+pend19:
+;---------------- make closure 19 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode19)
+jmp Lcont19
+Lcode19:
+ push rbp
+ mov rbp, rsp
+;------ opt ----------------- 
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
+ mov r10, r8
+ mov r11, 1
+ sub r10, r11
+ cmp r10, 0
+ je end_opt19
+mov qword [rbp + 8*3], 2
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls19:
+ cmp r10, 0
+ je end_make_ls19
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
+ dec r10
+ jmp make_ls19
+ end_make_ls19:
+mov [rbp + 8*(3 + 2)] , r11
+mov r11, r15
+sub r11,2
+add rbp, 8*(5 +1  )
+SHIFT_FRAME (4+2) , r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+;------ end opt ------------- 
+ end_opt19:
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next43
+mov rax, SOB_FALSE_ADDRESS
+ret
+next43:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse9 
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 32
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next42
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next42:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+jmp Lexit9 
+ 
+                              Lelse9: 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next41
+mov rax, SOB_FALSE_ADDRESS
+ret
+next41:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax , const_tbl + 41
+push rax 
+push 2 
+mov rax, qword [fvar_tbl + 112] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next40
+mov rax, SOB_FALSE_ADDRESS
+ret
+next40:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse10 
+ push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*2] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next39
+mov rax, SOB_FALSE_ADDRESS
+ret
+next39:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next38
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next38:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+jmp Lexit10 
+ 
+                              Lelse10: 
+mov rax , const_tbl + 50
+Lexit10: 
+Lexit9: 
+
+ leave
+ ret
+Lcont19:
+
+ leave
+ ret
+Lcont18:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next37
+mov rax, SOB_FALSE_ADDRESS
+ret
+next37:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 168], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 184] 
+push rax 
+push 1 
+;------------- copy env 20 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 20 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend20
+ploop20:
+ cmp r11, 0
+ je pend20
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop20
+pend20:
+;---------------- make closure 20 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode20)
+jmp Lcont20
+Lcode20:
+ push rbp
+ mov rbp, rsp
+ ;------------- copy env 21 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 21 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend21
+ploop21:
+ cmp r11, 0
+ je pend21
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop21
+pend21:
+;---------------- make closure 21 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode21)
+jmp Lcont21
+Lcode21:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 2
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next45
+mov rax, SOB_FALSE_ADDRESS
+ret
+next45:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse11 
+ mov rax , const_tbl + 4
+jmp Lexit11 
+ 
+                              Lelse11: 
+mov rax , const_tbl + 2
+Lexit11: 
+
+ leave
+ ret
+Lcont21:
+
+ leave
+ ret
+Lcont20:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next44
+mov rax, SOB_FALSE_ADDRESS
+ret
+next44:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 176], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 208] 
+push rax 
+mov rax, qword [fvar_tbl + 200] 
+push rax 
+push 2 
+;------------- copy env 22 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 22 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend22
+ploop22:
+ cmp r11, 0
+ je pend22
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop22
+pend22:
+;---------------- make closure 22 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode22)
+jmp Lcont22
+Lcode22:
+ push rbp
+ mov rbp, rsp
+ ;------------- copy env 23 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 23 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend23
+ploop23:
+ cmp r11, 0
+ je pend23
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop23
+pend23:
+;---------------- make closure 23 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode23)
+jmp Lcont23
+Lcode23:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next48
+mov rax, SOB_FALSE_ADDRESS
+ret
+next48:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+ jne orLexit12 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next47
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next47:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+orLexit12: 
+
+ leave
+ ret
+Lcont23:
+
+ leave
+ ret
+Lcont22:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next46
+mov rax, SOB_FALSE_ADDRESS
+ret
+next46:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 192], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 88] 
+push rax 
+mov rax, qword [fvar_tbl + 80] 
+push rax 
+mov rax, qword [fvar_tbl + 224] 
+push rax 
+mov rax, qword [fvar_tbl + 96] 
+push rax 
+mov rax, qword [fvar_tbl + 72] 
+push rax 
+push 5 
 ;------------- copy env 24 ----------------
 COPY_ENV 8 , 1
 mov r15, r14
@@ -823,9 +2521,9 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
+inc r11
  cmp r11, 0
  je pend24
-inc r11
 ploop24:
  cmp r11, 0
  je pend24
@@ -859,9 +2557,9 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
+inc r11
  cmp r11, 0
  je pend25
-inc r11
 ploop25:
  cmp r11, 0
  je pend25
@@ -879,51 +2577,53 @@ jmp Lcont25
 Lcode25:
  push rbp
  mov rbp, rsp
+;------ opt ----------------- 
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
+ mov r10, r8
+ mov r11, 2
+ sub r10, r11
+ cmp r10, 0
+ je end_opt25
+mov qword [rbp + 8*3], 3
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls25:
+ cmp r10, 0
+ je end_make_ls25
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
+ dec r10
+ jmp make_ls25
+ end_make_ls25:
+mov [rbp + 8*(3 + 3)] , r11
+mov r11, r15
+sub r11,3
+add rbp, 8*(5 +2  )
+SHIFT_FRAME (4+3) , r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+;------ end opt ------------- 
+ end_opt25:
  push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 32
+mov rax, qword [rbp + 8 * (4 + 2)] 
 push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 2 
+push 1 
 mov rax, qword [rbp + 8*2] 
 mov rax, qword [rax + 8*0] 
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next26
+je next70
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next26:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont25:
-
- leave
- ret
-Lcont24:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next23
-mov rax, SOB_FALSE_ADDRESS
-ret
-next23:
+next70:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -931,118 +2631,14 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-mov qword [fvar_tbl + 104], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-;------------- copy env 27 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 27 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend27
-inc r11
-ploop27:
- cmp r11, 0
- je pend27
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop27
-pend27:
-;---------------- make closure 27 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode27)
-jmp Lcont27
-Lcode27:
- push rbp
- mov rbp, rsp
-;------ opt ----------------- 
- mov r8, [rbp + 8*3]
- mov r10, r8
- mov r11, 0
- sub r10, r11
- cmp r10, 0
- je end_opt27
-mov qword [rbp + 8*3], 1
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop27:
- cmp r10, 0
- je opt_end_loop27
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
- dec r10
- jmp opt_loop27
-opt_end_loop27:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+1)], rdx
-mov r11, r8
-sub r11,1
-add rbp, 8*(5 +0  )
-SHIFT_FRAME (4+1) , r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-;------ end opt ------------- 
- end_opt27:
- mov rax, qword [rbp + 8 * (4 + 0)] 
-
- leave
- ret
-Lcont27:
-mov qword [fvar_tbl + 120], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 88] 
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse13 
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
 push rax 
-mov rax, qword [fvar_tbl + 136] 
-push rax 
-mov rax, qword [fvar_tbl + 72] 
-push rax 
-push 3 
+push 1 
 ;------------- copy env 29 ----------------
-COPY_ENV 8 , 1
+COPY_ENV 24 , 3
 mov r15, r14
 ;---------------- copy args 29 ----------------
 mov r11, qword [rbp + 8*3]
@@ -1057,9 +2653,9 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
+inc r11
  cmp r11, 0
  je pend29
-inc r11
 ploop29:
  cmp r11, 0
  je pend29
@@ -1077,8 +2673,12 @@ jmp Lcont29
 Lcode29:
  push rbp
  mov rbp, rsp
- ;------------- copy env 30 ----------------
-COPY_ENV 16 , 2
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 23
+push rax 
+push 1 
+;------------- copy env 30 ----------------
+COPY_ENV 32 , 4
 mov r15, r14
 ;---------------- copy args 30 ----------------
 mov r11, qword [rbp + 8*3]
@@ -1093,9 +2693,9 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
+inc r11
  cmp r11, 0
  je pend30
-inc r11
 ploop30:
  cmp r11, 0
  je pend30
@@ -1113,265 +2713,16 @@ jmp Lcont30
 Lcode30:
  push rbp
  mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next36
-mov rax, SOB_FALSE_ADDRESS
-ret
-next36:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
- jne orLexit31 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next35
-mov rax, SOB_FALSE_ADDRESS
-ret
-next35:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse32 
- push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*2] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next34
-mov rax, SOB_FALSE_ADDRESS
-ret
-next34:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 1 
-mov rax, qword [fvar_tbl + 128] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next33
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next33:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-jmp Lexit32 
- 
-                              Lelse32: 
-mov rax , const_tbl + 2
-Lexit32: 
-orLexit31: 
-
- leave
- ret
-Lcont30:
-
- leave
- ret
-Lcont29:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next28
-mov rax, SOB_FALSE_ADDRESS
-ret
-next28:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 128], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 152] 
-push rax 
-mov rax, qword [fvar_tbl + 88] 
-push rax 
-mov rax, qword [fvar_tbl + 136] 
-push rax 
-mov rax, qword [fvar_tbl + 72] 
-push rax 
-push 4 
-;------------- copy env 38 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 38 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend38
-inc r11
-ploop38:
- cmp r11, 0
- je pend38
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop38
-pend38:
-;---------------- make closure 38 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode38)
-jmp Lcont38
-Lcode38:
- push rbp
- mov rbp, rsp
- ;------------- copy env 39 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 39 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend39
-inc r11
-ploop39:
- cmp r11, 0
- je pend39
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop39
-pend39:
-;---------------- make closure 39 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode39)
-jmp Lcont39
-Lcode39:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 23
-push rax 
-mov rax , const_tbl + 23
-push rax 
-push 2 
-;------------- copy env 41 ----------------
-COPY_ENV 24 , 3
-mov r15, r14
-;---------------- copy args 41 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend41
-inc r11
-ploop41:
- cmp r11, 0
- je pend41
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop41
-pend41:
-;---------------- make closure 41 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode41)
-jmp Lcont41
-Lcode41:
- push rbp
- mov rbp, rsp
  MALLOC rsi , 8
-mov rax, qword [rbp + 8 * (4 + 1)] 
+mov rax, qword [rbp + 8 * (4 + 0)] 
 mov [rsi], rax
 mov rax, rsi
-mov qword [rbp + 8*( 4 + 1)] , rax 
-mov rax, SOB_VOID_ADDRESS 
-mov rax , const_tbl + 32
 mov qword [rbp + 8*( 4 + 0)] , rax 
 mov rax, SOB_VOID_ADDRESS 
-;------------- copy env 42 ----------------
-COPY_ENV 32 , 4
+;------------- copy env 31 ----------------
+COPY_ENV 40 , 5
 mov r15, r14
-;---------------- copy args 42 ----------------
+;---------------- copy args 31 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -1384,24 +2735,24 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend42
 inc r11
-ploop42:
  cmp r11, 0
- je pend42
+ je pend31
+ploop31:
+ cmp r11, 0
+ je pend31
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop42
-pend42:
-;---------------- make closure 42 ----------------
+ jmp ploop31
+pend31:
+;---------------- make closure 31 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode42)
-jmp Lcont42
-Lcode42:
+MAKE_CLOSURE(rax , r12 , Lcode31)
+jmp Lcont31
+Lcode31:
  push rbp
  mov rbp, rsp
  push qword SOB_NIL_ADDRESS
@@ -1409,65 +2760,14 @@ mov rax, qword [rbp + 8 * (4 + 0)]
 push rax 
 push 1 
 mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next49
-mov rax, SOB_FALSE_ADDRESS
-ret
-next49:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse43 
- mov rax, qword [rbp + 8 * (4 + 1)] 
-jmp Lexit43 
- 
-                              Lelse43: 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next48
-mov rax, SOB_FALSE_ADDRESS
-ret
-next48:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse44 
- push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-mov rax , const_tbl + 41
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
 mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next46
+je next68
 mov rax, SOB_FALSE_ADDRESS
 ret
-next46:
+next68:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -1475,20 +2775,27 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-push rax 
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse15 
+ mov rax , const_tbl + 1
+jmp Lexit15 
+ 
+                              Lelse15: 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
 push 1 
 mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*4] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next47
+je next65
 mov rax, SOB_FALSE_ADDRESS
 ret
-next47:
+next65:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -1497,17 +2804,75 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 push rax 
-push 2 
+push 1 
 mov rax, qword [rbp + 8*2] 
 mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*0] 
 mov rax, qword [rax] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next45
+je next64
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next45:
+next64:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next67
+mov rax, SOB_FALSE_ADDRESS
+ret
+next67:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next66
+mov rax, SOB_FALSE_ADDRESS
+ret
+next66:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next63
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next63:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -1524,31 +2889,481 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-jmp Lexit44 
- 
-                              Lelse44: 
-mov rax , const_tbl + 50
-Lexit44: 
-Lexit43: 
+Lexit15: 
 
  leave
  ret
-Lcont42:
+Lcont31:
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+pop qword [rax] 
+mov rax, SOB_VOID_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov rax, qword [rax] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next69
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next69:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont30:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next62
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next62:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont29:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next61
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next61:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+jmp Lexit13 
+ 
+                              Lelse13: 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 2)] 
 push rax 
 mov rax, qword [rbp + 8 * (4 + 1)] 
-pop qword [rax] 
-
-                         mov rax, SOB_VOID_ADDRESS
+push rax 
+push 2 
+;------------- copy env 26 ----------------
+COPY_ENV 24 , 3
+mov r15, r14
+;---------------- copy args 26 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend26
+ploop26:
+ cmp r11, 0
+ je pend26
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop26
+pend26:
+;---------------- make closure 26 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode26)
+jmp Lcont26
+Lcode26:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 23
+push rax 
+push 1 
+;------------- copy env 27 ----------------
+COPY_ENV 32 , 4
+mov r15, r14
+;---------------- copy args 27 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend27
+ploop27:
+ cmp r11, 0
+ je pend27
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop27
+pend27:
+;---------------- make closure 27 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode27)
+jmp Lcont27
+Lcode27:
+ push rbp
+ mov rbp, rsp
+ MALLOC rsi , 8
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov [rsi], rax
+mov rax, rsi
+mov qword [rbp + 8*( 4 + 0)] , rax 
+mov rax, SOB_VOID_ADDRESS 
+;------------- copy env 28 ----------------
+COPY_ENV 40 , 5
+mov r15, r14
+;---------------- copy args 28 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend28
+ploop28:
+ cmp r11, 0
+ je pend28
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop28
+pend28:
+;---------------- make closure 28 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode28)
+jmp Lcont28
+Lcode28:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next59
+mov rax, SOB_FALSE_ADDRESS
+ret
+next59:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse14 
+ mov rax , const_tbl + 1
+jmp Lexit14 
+ 
+                              Lelse14: 
 push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 32
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*4] 
+push rax 
+push 2 
+mov rax, qword [fvar_tbl + 216] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next54
+mov rax, SOB_FALSE_ADDRESS
+ret
+next54:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*4] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next55
+mov rax, SOB_FALSE_ADDRESS
+ret
+next55:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next53
+mov rax, SOB_FALSE_ADDRESS
+ret
+next53:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*3] 
+push rax 
+push 2 
+mov rax, qword [fvar_tbl + 216] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next57
+mov rax, SOB_FALSE_ADDRESS
+ret
+next57:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next58
+mov rax, SOB_FALSE_ADDRESS
+ret
+next58:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*0] 
+push rax 
+push 3 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*2] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next56
+mov rax, SOB_FALSE_ADDRESS
+ret
+next56:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next52
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next52:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+Lexit14: 
+
+ leave
+ ret
+Lcont28:
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+pop qword [rax] 
+mov rax, SOB_VOID_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*1] 
 push rax 
 mov rax, qword [rbp + 8*2] 
 mov rax, qword [rax + 8*0] 
 mov rax, qword [rax + 8*0] 
 push rax 
 push 2 
-mov rax, qword [rbp + 8 * (4 + 1)] 
+mov rax, qword [rbp + 8 * (4 + 0)] 
 mov rax, qword [rax] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next60
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next60:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont27:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next51
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next51:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont26:
 mov sil, [rax]
 cmp sil, T_CLOSURE
 je t_next50
@@ -1571,16 +3386,1366 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
+Lexit13: 
+
+ leave
+ ret
+Lcont25:
+
+ leave
+ ret
+Lcont24:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next49
+mov rax, SOB_FALSE_ADDRESS
+ret
+next49:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 216], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 152] 
+push rax 
+mov rax, qword [fvar_tbl + 144] 
+push rax 
+mov rax, qword [fvar_tbl + 168] 
+push rax 
+mov rax, qword [fvar_tbl + 88] 
+push rax 
+mov rax, qword [fvar_tbl + 80] 
+push rax 
+mov rax, qword [fvar_tbl + 136] 
+push rax 
+mov rax, qword [fvar_tbl + 72] 
+push rax 
+push 7 
+;------------- copy env 32 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 32 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend32
+ploop32:
+ cmp r11, 0
+ je pend32
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop32
+pend32:
+;---------------- make closure 32 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode32)
+jmp Lcont32
+Lcode32:
+ push rbp
+ mov rbp, rsp
+ ;------------- copy env 33 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 33 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend33
+ploop33:
+ cmp r11, 0
+ je pend33
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop33
+pend33:
+;---------------- make closure 33 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode33)
+jmp Lcont33
+Lcode33:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 23
+push rax 
+push 1 
+;------------- copy env 34 ----------------
+COPY_ENV 24 , 3
+mov r15, r14
+;---------------- copy args 34 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend34
+ploop34:
+ cmp r11, 0
+ je pend34
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop34
+pend34:
+;---------------- make closure 34 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode34)
+jmp Lcont34
+Lcode34:
+ push rbp
+ mov rbp, rsp
+ MALLOC rsi , 8
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov [rsi], rax
+mov rax, rsi
+mov qword [rbp + 8*( 4 + 0)] , rax 
+mov rax, SOB_VOID_ADDRESS 
+;------------- copy env 35 ----------------
+COPY_ENV 32 , 4
+mov r15, r14
+;---------------- copy args 35 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend35
+ploop35:
+ cmp r11, 0
+ je pend35
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop35
+pend35:
+;---------------- make closure 35 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode35)
+jmp Lcont35
+Lcode35:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next79
+mov rax, SOB_FALSE_ADDRESS
+ret
+next79:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse16 
+ mov rax, qword [rbp + 8 * (4 + 1)] 
+jmp Lexit16 
+ 
+                              Lelse16: 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next78
+mov rax, SOB_FALSE_ADDRESS
+ret
+next78:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse17 
+ push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 2)] 
+push rax 
+mov rax , const_tbl + 41
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*6] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next74
+mov rax, SOB_FALSE_ADDRESS
+ret
+next74:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next76
+mov rax, SOB_FALSE_ADDRESS
+ret
+next76:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax, qword [rbp + 8 * (4 + 2)] 
+push rax 
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+push 3 
+mov rax, qword [fvar_tbl + 240] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next75
+mov rax, SOB_FALSE_ADDRESS
+ret
+next75:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next77
+mov rax, SOB_FALSE_ADDRESS
+ret
+next77:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 3 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next73
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next73:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 3) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+jmp Lexit17 
+ 
+                              Lelse17: 
+mov rax , const_tbl + 50
+Lexit17: 
+Lexit16: 
+
+ leave
+ ret
+Lcont35:
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+pop qword [rax] 
+mov rax, SOB_VOID_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 32
+push rax 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*5] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next82
+mov rax, SOB_FALSE_ADDRESS
+ret
+next82:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*4] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next81
+mov rax, SOB_FALSE_ADDRESS
+ret
+next81:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+push rax 
+push 3 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov rax, qword [rax] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next80
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next80:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 3) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont34:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next72
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next72:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont33:
+
+ leave
+ ret
+Lcont32:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next71
+mov rax, SOB_FALSE_ADDRESS
+ret
+next71:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 232], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 280] 
+push rax 
+mov rax, qword [fvar_tbl + 272] 
+push rax 
+mov rax, qword [fvar_tbl + 96] 
+push rax 
+mov rax, qword [fvar_tbl + 264] 
+push rax 
+mov rax, qword [fvar_tbl + 256] 
+push rax 
+push 5 
+;------------- copy env 36 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 36 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend36
+ploop36:
+ cmp r11, 0
+ je pend36
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop36
+pend36:
+;---------------- make closure 36 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode36)
+jmp Lcont36
+Lcode36:
+ push rbp
+ mov rbp, rsp
+ ;------------- copy env 37 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 37 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend37
+ploop37:
+ cmp r11, 0
+ je pend37
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop37
+pend37:
+;---------------- make closure 37 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode37)
+jmp Lcont37
+Lcode37:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 23
+push rax 
+push 1 
+;------------- copy env 38 ----------------
+COPY_ENV 24 , 3
+mov r15, r14
+;---------------- copy args 38 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend38
+ploop38:
+ cmp r11, 0
+ je pend38
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop38
+pend38:
+;---------------- make closure 38 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode38)
+jmp Lcont38
+Lcode38:
+ push rbp
+ mov rbp, rsp
+ MALLOC rsi , 8
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov [rsi], rax
+mov rax, rsi
+mov qword [rbp + 8*( 4 + 0)] , rax 
+mov rax, SOB_VOID_ADDRESS 
+;------------- copy env 39 ----------------
+COPY_ENV 32 , 4
+mov r15, r14
+;---------------- copy args 39 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend39
+ploop39:
+ cmp r11, 0
+ je pend39
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop39
+pend39:
+;---------------- make closure 39 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode39)
+jmp Lcont39
+Lcode39:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 32
+push rax 
+mov rax, qword [rbp + 8 * (4 + 2)] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next89
+mov rax, SOB_FALSE_ADDRESS
+ret
+next89:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse18 
+ mov rax, qword [rbp + 8 * (4 + 1)] 
+jmp Lexit18 
+ 
+                              Lelse18: 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 41
+push rax 
+mov rax, qword [rbp + 8 * (4 + 2)] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*4] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next86
+mov rax, SOB_FALSE_ADDRESS
+ret
+next86:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 1)] 
+push rax 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 2)] 
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next88
+mov rax, SOB_FALSE_ADDRESS
+ret
+next88:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*2] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next87
+mov rax, SOB_FALSE_ADDRESS
+ret
+next87:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 3 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next85
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next85:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 3) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+Lexit18: 
+
+ leave
+ ret
+Lcont39:
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+pop qword [rax] 
+mov rax, SOB_VOID_ADDRESS
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 41
+push rax 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next92
+mov rax, SOB_FALSE_ADDRESS
+ret
+next92:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*4] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next91
+mov rax, SOB_FALSE_ADDRESS
+ret
+next91:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax , const_tbl + 1
+push rax 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+push rax 
+push 3 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov rax, qword [rax] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next90
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next90:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 3) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont38:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next84
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next84:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont37:
+
+ leave
+ ret
+Lcont36:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next83
+mov rax, SOB_FALSE_ADDRESS
+ret
+next83:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 248], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 232] 
+push rax 
+push 1 
+;------------- copy env 40 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 40 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend40
+ploop40:
+ cmp r11, 0
+ je pend40
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop40
+pend40:
+;---------------- make closure 40 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode40)
+jmp Lcont40
+Lcode40:
+ push rbp
+ mov rbp, rsp
+ ;------------- copy env 41 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 41 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend41
+ploop41:
+ cmp r11, 0
+ je pend41
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop41
+pend41:
+;---------------- make closure 41 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode41)
+jmp Lcont41
+Lcode41:
+ push rbp
+ mov rbp, rsp
+;------ opt ----------------- 
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
+ mov r10, r8
+ mov r11, 0
+ sub r10, r11
+ cmp r10, 0
+ je end_opt41
+mov qword [rbp + 8*3], 1
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls41:
+ cmp r10, 0
+ je end_make_ls41
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
+ dec r10
+ jmp make_ls41
+ end_make_ls41:
+mov [rbp + 8*(3 + 1)] , r11
+mov r11, r15
+sub r11,1
+add rbp, 8*(5 +0  )
+SHIFT_FRAME (4+1) , r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+;------ end opt ------------- 
+ end_opt41:
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next94
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next94:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
 
  leave
  ret
 Lcont41:
+
+ leave
+ ret
+Lcont40:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next40
+je next93
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next40:
+next93:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 288], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 88] 
+push rax 
+mov rax, qword [fvar_tbl + 224] 
+push rax 
+mov rax, qword [fvar_tbl + 80] 
+push rax 
+mov rax, qword [fvar_tbl + 152] 
+push rax 
+mov rax, qword [fvar_tbl + 72] 
+push rax 
+push 5 
+;------------- copy env 42 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 42 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend42
+ploop42:
+ cmp r11, 0
+ je pend42
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop42
+pend42:
+;---------------- make closure 42 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode42)
+jmp Lcont42
+Lcode42:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 23
+push rax 
+push 1 
+;------------- copy env 43 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 43 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend43
+ploop43:
+ cmp r11, 0
+ je pend43
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop43
+pend43:
+;---------------- make closure 43 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode43)
+jmp Lcont43
+Lcode43:
+ push rbp
+ mov rbp, rsp
+ MALLOC rsi , 8
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov [rsi], rax
+mov rax, rsi
+mov qword [rbp + 8*( 4 + 0)] , rax 
+mov rax, SOB_VOID_ADDRESS 
+;------------- copy env 44 ----------------
+COPY_ENV 24 , 3
+mov r15, r14
+;---------------- copy args 44 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend44
+ploop44:
+ cmp r11, 0
+ je pend44
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop44
+pend44:
+;---------------- make closure 44 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode44)
+jmp Lcont44
+Lcode44:
+ push rbp
+ mov rbp, rsp
+;------ opt ----------------- 
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
+ mov r10, r8
+ mov r11, 0
+ sub r10, r11
+ cmp r10, 0
+ je end_opt44
+mov qword [rbp + 8*3], 1
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls44:
+ cmp r10, 0
+ je end_make_ls44
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
+ dec r10
+ jmp make_ls44
+ end_make_ls44:
+mov [rbp + 8*(3 + 1)] , r11
+mov r11, r15
+sub r11,1
+add rbp, 8*(5 +0  )
+SHIFT_FRAME (4+1) , r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+;------ end opt ------------- 
+ end_opt44:
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next101
+mov rax, SOB_FALSE_ADDRESS
+ret
+next101:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse19 
+ mov rax , const_tbl + 32
+jmp Lexit19 
+ 
+                              Lelse19: 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*4] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next99
+mov rax, SOB_FALSE_ADDRESS
+ret
+next99:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next98
+mov rax, SOB_FALSE_ADDRESS
+ret
+next98:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*2] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next100
+mov rax, SOB_FALSE_ADDRESS
+ret
+next100:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next97
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next97:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -1597,20 +4762,53 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
+Lexit19: 
 
  leave
  ret
-Lcont39:
+Lcont44:
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+pop qword [rax] 
+mov rax, SOB_VOID_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov rax, qword [rax] 
 
  leave
  ret
-Lcont38:
+Lcont43:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next37
+je t_next96
 mov rax, SOB_FALSE_ADDRESS
 ret
-next37:
+t_next96:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont42:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next95
+mov rax, SOB_FALSE_ADDRESS
+ret
+next95:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -1618,23 +4816,1002 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-mov qword [fvar_tbl + 144], rax 
+mov qword [fvar_tbl + 152], rax 
 mov rax, SOB_VOID_ADDRESS 
 
     call write_sob_if_not_void
 
 push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 144] 
+mov rax, qword [fvar_tbl + 88] 
 push rax 
-mov rax, qword [fvar_tbl + 112] 
+mov rax, qword [fvar_tbl + 224] 
 push rax 
 mov rax, qword [fvar_tbl + 80] 
 push rax 
-mov rax, qword [fvar_tbl + 160] 
+mov rax, qword [fvar_tbl + 296] 
 push rax 
 mov rax, qword [fvar_tbl + 72] 
 push rax 
 push 5 
+;------------- copy env 45 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 45 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend45
+ploop45:
+ cmp r11, 0
+ je pend45
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop45
+pend45:
+;---------------- make closure 45 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode45)
+jmp Lcont45
+Lcode45:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 23
+push rax 
+push 1 
+;------------- copy env 46 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 46 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend46
+ploop46:
+ cmp r11, 0
+ je pend46
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop46
+pend46:
+;---------------- make closure 46 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode46)
+jmp Lcont46
+Lcode46:
+ push rbp
+ mov rbp, rsp
+ MALLOC rsi , 8
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov [rsi], rax
+mov rax, rsi
+mov qword [rbp + 8*( 4 + 0)] , rax 
+mov rax, SOB_VOID_ADDRESS 
+;------------- copy env 47 ----------------
+COPY_ENV 24 , 3
+mov r15, r14
+;---------------- copy args 47 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend47
+ploop47:
+ cmp r11, 0
+ je pend47
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop47
+pend47:
+;---------------- make closure 47 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode47)
+jmp Lcont47
+Lcode47:
+ push rbp
+ mov rbp, rsp
+;------ opt ----------------- 
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
+ mov r10, r8
+ mov r11, 0
+ sub r10, r11
+ cmp r10, 0
+ je end_opt47
+mov qword [rbp + 8*3], 1
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls47:
+ cmp r10, 0
+ je end_make_ls47
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
+ dec r10
+ jmp make_ls47
+ end_make_ls47:
+mov [rbp + 8*(3 + 1)] , r11
+mov r11, r15
+sub r11,1
+add rbp, 8*(5 +0  )
+SHIFT_FRAME (4+1) , r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+;------ end opt ------------- 
+ end_opt47:
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next108
+mov rax, SOB_FALSE_ADDRESS
+ret
+next108:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse20 
+ mov rax , const_tbl + 41
+jmp Lexit20 
+ 
+                              Lelse20: 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*4] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next106
+mov rax, SOB_FALSE_ADDRESS
+ret
+next106:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next105
+mov rax, SOB_FALSE_ADDRESS
+ret
+next105:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*2] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next107
+mov rax, SOB_FALSE_ADDRESS
+ret
+next107:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next104
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next104:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+Lexit20: 
+
+ leave
+ ret
+Lcont47:
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+pop qword [rax] 
+mov rax, SOB_VOID_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov rax, qword [rax] 
+
+ leave
+ ret
+Lcont46:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next103
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next103:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont45:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next102
+mov rax, SOB_FALSE_ADDRESS
+ret
+next102:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 296], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 88] 
+push rax 
+mov rax, qword [fvar_tbl + 144] 
+push rax 
+mov rax, qword [fvar_tbl + 224] 
+push rax 
+mov rax, qword [fvar_tbl + 80] 
+push rax 
+mov rax, qword [fvar_tbl + 152] 
+push rax 
+mov rax, qword [fvar_tbl + 280] 
+push rax 
+mov rax, qword [fvar_tbl + 72] 
+push rax 
+push 7 
+;------------- copy env 48 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 48 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend48
+ploop48:
+ cmp r11, 0
+ je pend48
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop48
+pend48:
+;---------------- make closure 48 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode48)
+jmp Lcont48
+Lcode48:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 23
+push rax 
+push 1 
+;------------- copy env 49 ----------------
+COPY_ENV 16 , 2
+mov r15, r14
+;---------------- copy args 49 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend49
+ploop49:
+ cmp r11, 0
+ je pend49
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop49
+pend49:
+;---------------- make closure 49 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode49)
+jmp Lcont49
+Lcode49:
+ push rbp
+ mov rbp, rsp
+ MALLOC rsi , 8
+mov rax, qword [rbp + 8 * (4 + 0)] 
+mov [rsi], rax
+mov rax, rsi
+mov qword [rbp + 8*( 4 + 0)] , rax 
+mov rax, SOB_VOID_ADDRESS 
+;------------- copy env 50 ----------------
+COPY_ENV 24 , 3
+mov r15, r14
+;---------------- copy args 50 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend50
+ploop50:
+ cmp r11, 0
+ je pend50
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop50
+pend50:
+;---------------- make closure 50 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode50)
+jmp Lcont50
+Lcode50:
+ push rbp
+ mov rbp, rsp
+;------ opt ----------------- 
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
+ mov r10, r8
+ mov r11, 0
+ sub r10, r11
+ cmp r10, 0
+ je end_opt50
+mov qword [rbp + 8*3], 1
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls50:
+ cmp r10, 0
+ je end_make_ls50
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
+ dec r10
+ jmp make_ls50
+ end_make_ls50:
+mov [rbp + 8*(3 + 1)] , r11
+mov r11, r15
+sub r11,1
+add rbp, 8*(5 +0  )
+SHIFT_FRAME (4+1) , r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+;------ end opt ------------- 
+ end_opt50:
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next115
+mov rax, SOB_FALSE_ADDRESS
+ret
+next115:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse21 
+ mov rax , const_tbl + 32
+jmp Lexit21 
+ 
+                              Lelse21: 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next112
+mov rax, SOB_FALSE_ADDRESS
+ret
+next112:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*6] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next114
+mov rax, SOB_FALSE_ADDRESS
+ret
+next114:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*4] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next113
+mov rax, SOB_FALSE_ADDRESS
+ret
+next113:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next111
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next111:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+Lexit21: 
+
+ leave
+ ret
+Lcont50:
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+pop qword [rax] 
+mov rax, SOB_VOID_ADDRESS
+;------------- copy env 51 ----------------
+COPY_ENV 24 , 3
+mov r15, r14
+;---------------- copy args 51 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend51
+ploop51:
+ cmp r11, 0
+ je pend51
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop51
+pend51:
+;---------------- make closure 51 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode51)
+jmp Lcont51
+Lcode51:
+ push rbp
+ mov rbp, rsp
+;------ opt ----------------- 
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
+ mov r10, r8
+ mov r11, 0
+ sub r10, r11
+ cmp r10, 0
+ je end_opt51
+mov qword [rbp + 8*3], 1
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls51:
+ cmp r10, 0
+ je end_make_ls51
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
+ dec r10
+ jmp make_ls51
+ end_make_ls51:
+mov [rbp + 8*(3 + 1)] , r11
+mov r11, r15
+sub r11,1
+add rbp, 8*(5 +0  )
+SHIFT_FRAME (4+1) , r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+;------ end opt ------------- 
+ end_opt51:
+ push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*0] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next124
+mov rax, SOB_FALSE_ADDRESS
+ret
+next124:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse22 
+ mov rax , const_tbl + 50
+jmp Lexit22 
+ 
+                              Lelse22: 
+push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 41
+push rax 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*5] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next123
+mov rax, SOB_FALSE_ADDRESS
+ret
+next123:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 2 
+mov rax, qword [fvar_tbl + 112] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next122
+mov rax, SOB_FALSE_ADDRESS
+ret
+next122:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse23 
+ push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next121
+mov rax, SOB_FALSE_ADDRESS
+ret
+next121:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax , const_tbl + 32
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*1] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next120
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next120:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+jmp Lexit23 
+ 
+                              Lelse23: 
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*6] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next118
+mov rax, SOB_FALSE_ADDRESS
+ret
+next118:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax] 
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*4] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next117
+mov rax, SOB_FALSE_ADDRESS
+ret
+next117:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push qword SOB_NIL_ADDRESS
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 1 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*3] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next119
+mov rax, SOB_FALSE_ADDRESS
+ret
+next119:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*1] 
+mov rax, qword [rax + 8*2] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next116
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next116:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+Lexit23: 
+Lexit22: 
+
+ leave
+ ret
+Lcont51:
+
+ leave
+ ret
+Lcont49:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next110
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next110:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+
+ leave
+ ret
+Lcont48:
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next109
+mov rax, SOB_FALSE_ADDRESS
+ret
+next109:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+mov qword [fvar_tbl + 280], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax, qword [fvar_tbl + 88] 
+push rax 
+mov rax, qword [fvar_tbl + 144] 
+push rax 
+mov rax, qword [fvar_tbl + 224] 
+push rax 
+mov rax, qword [fvar_tbl + 80] 
+push rax 
+mov rax, qword [fvar_tbl + 296] 
+push rax 
+mov rax, qword [fvar_tbl + 304] 
+push rax 
+mov rax, qword [fvar_tbl + 72] 
+push rax 
+push 7 
 ;------------- copy env 52 ----------------
 COPY_ENV 8 , 1
 mov r15, r14
@@ -1651,9 +5828,9 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
+inc r11
  cmp r11, 0
  je pend52
-inc r11
 ploop52:
  cmp r11, 0
  je pend52
@@ -1687,9 +5864,9 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
+inc r11
  cmp r11, 0
  je pend53
-inc r11
 ploop53:
  cmp r11, 0
  je pend53
@@ -1708,49 +5885,32 @@ Lcode53:
  push rbp
  mov rbp, rsp
 ;------ opt ----------------- 
- mov r8, [rbp + 8*3]
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
  mov r10, r8
- mov r11, 1
+ mov r11, 0
  sub r10, r11
  cmp r10, 0
  je end_opt53
-mov qword [rbp + 8*3], 2
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop53:
+mov qword [rbp + 8*3], 1
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls53:
  cmp r10, 0
- je opt_end_loop53
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
+ je end_make_ls53
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
  dec r10
- jmp opt_loop53
-opt_end_loop53:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+2)], rdx
-mov r11, r8
-sub r11,2
-add rbp, 8*(5 +1  )
-SHIFT_FRAME (4+2) , r11
+ jmp make_ls53
+ end_make_ls53:
+mov [rbp + 8*(3 + 1)] , r11
+mov r11, r15
+sub r11,1
+add rbp, 8*(5 +0  )
+SHIFT_FRAME (4+1) , r11
 mov rax, r11
 mov rdx, 8
 mul rdx
@@ -1759,7 +5919,7 @@ mov rbp, rsp
 ;------ end opt ------------- 
  end_opt53:
  push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
+mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
 push 1 
 mov rax, qword [rbp + 8*2] 
@@ -1767,10 +5927,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next61
+je next134
 mov rax, SOB_FALSE_ADDRESS
 ret
-next61:
+next134:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -1779,312 +5939,27 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse54 
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 116
-push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next60
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next60:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-jmp Lexit54 
+je Lelse24 
+ mov rax , const_tbl + 50
+jmp Lexit24 
  
-                              Lelse54: 
+                              Lelse24: 
 push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*4] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next59
-mov rax, SOB_FALSE_ADDRESS
-ret
-next59:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
 mov rax , const_tbl + 41
 push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*3] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next58
-mov rax, SOB_FALSE_ADDRESS
-ret
-next58:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse55 
- push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*2] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next57
-mov rax, SOB_FALSE_ADDRESS
-ret
-next57:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next56
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next56:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-jmp Lexit55 
- 
-                              Lelse55: 
-mov rax , const_tbl + 50
-Lexit55: 
-Lexit54: 
-
- leave
- ret
-Lcont53:
-
- leave
- ret
-Lcont52:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next51
-mov rax, SOB_FALSE_ADDRESS
-ret
-next51:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 160], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 72] 
-push rax 
-mov rax, qword [fvar_tbl + 80] 
-push rax 
-mov rax, qword [fvar_tbl + 168] 
-push rax 
-mov rax, qword [fvar_tbl + 144] 
-push rax 
-push 4 
-;------------- copy env 63 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 63 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend63
-inc r11
-ploop63:
- cmp r11, 0
- je pend63
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop63
-pend63:
-;---------------- make closure 63 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode63)
-jmp Lcont63
-Lcode63:
- push rbp
- mov rbp, rsp
- ;------------- copy env 64 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 64 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend64
-inc r11
-ploop64:
- cmp r11, 0
- je pend64
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop64
-pend64:
-;---------------- make closure 64 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode64)
-jmp Lcont64
-Lcode64:
- push rbp
- mov rbp, rsp
-;------ opt ----------------- 
- mov r8, [rbp + 8*3]
- mov r10, r8
- mov r11, 1
- sub r10, r11
- cmp r10, 0
- je end_opt64
-mov qword [rbp + 8*3], 2
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop64:
- cmp r10, 0
- je opt_end_loop64
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
- dec r10
- jmp opt_loop64
-opt_end_loop64:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+2)], rdx
-mov r11, r8
-sub r11,2
-add rbp, 8*(5 +1  )
-SHIFT_FRAME (4+2) , r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-;------ end opt ------------- 
- end_opt64:
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
 push 1 
 mov rax, qword [rbp + 8*2] 
 mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*3] 
+mov rax, qword [rax + 8*5] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next72
+je next133
 mov rax, SOB_FALSE_ADDRESS
 ret
-next72:
+next133:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -2092,74 +5967,15 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse65 
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 32
-push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next71
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next71:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-jmp Lexit65 
- 
-                              Lelse65: 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next70
-mov rax, SOB_FALSE_ADDRESS
-ret
-next70:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax , const_tbl + 41
 push rax 
 push 2 
 mov rax, qword [fvar_tbl + 112] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next69
+je next132
 mov rax, SOB_FALSE_ADDRESS
 ret
-next69:
+next132:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -2168,1471 +5984,15 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse66 
+je Lelse25 
  push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*2] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next68
-mov rax, SOB_FALSE_ADDRESS
-ret
-next68:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next67
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next67:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-jmp Lexit66 
- 
-                              Lelse66: 
-mov rax , const_tbl + 50
-Lexit66: 
-Lexit65: 
-
- leave
- ret
-Lcont64:
-
- leave
- ret
-Lcont63:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next62
-mov rax, SOB_FALSE_ADDRESS
-ret
-next62:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 168], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 184] 
-push rax 
-push 1 
-;------------- copy env 74 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 74 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend74
-inc r11
-ploop74:
- cmp r11, 0
- je pend74
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop74
-pend74:
-;---------------- make closure 74 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode74)
-jmp Lcont74
-Lcode74:
- push rbp
- mov rbp, rsp
- ;------------- copy env 75 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 75 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend75
-inc r11
-ploop75:
- cmp r11, 0
- je pend75
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop75
-pend75:
-;---------------- make closure 75 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode75)
-jmp Lcont75
-Lcode75:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 4
-push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next77
-mov rax, SOB_FALSE_ADDRESS
-ret
-next77:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse76 
- mov rax , const_tbl + 2
-jmp Lexit76 
- 
-                              Lelse76: 
-mov rax , const_tbl + 4
-Lexit76: 
-
- leave
- ret
-Lcont75:
-
- leave
- ret
-Lcont74:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next73
-mov rax, SOB_FALSE_ADDRESS
-ret
-next73:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 176], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 208] 
-push rax 
-mov rax, qword [fvar_tbl + 200] 
-push rax 
-push 2 
-;------------- copy env 79 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 79 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend79
-inc r11
-ploop79:
- cmp r11, 0
- je pend79
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop79
-pend79:
-;---------------- make closure 79 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode79)
-jmp Lcont79
-Lcode79:
- push rbp
- mov rbp, rsp
- ;------------- copy env 80 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 80 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend80
-inc r11
-ploop80:
- cmp r11, 0
- je pend80
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop80
-pend80:
-;---------------- make closure 80 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode80)
-jmp Lcont80
-Lcode80:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
 push 1 
 mov rax, qword [rbp + 8*2] 
 mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next83
-mov rax, SOB_FALSE_ADDRESS
-ret
-next83:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
- jne orLexit81 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next82
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next82:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-orLexit81: 
-
- leave
- ret
-Lcont80:
-
- leave
- ret
-Lcont79:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next78
-mov rax, SOB_FALSE_ADDRESS
-ret
-next78:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 192], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 88] 
-push rax 
-mov rax, qword [fvar_tbl + 80] 
-push rax 
-mov rax, qword [fvar_tbl + 224] 
-push rax 
-mov rax, qword [fvar_tbl + 96] 
-push rax 
-mov rax, qword [fvar_tbl + 72] 
-push rax 
-push 5 
-;------------- copy env 85 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 85 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend85
-inc r11
-ploop85:
- cmp r11, 0
- je pend85
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop85
-pend85:
-;---------------- make closure 85 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode85)
-jmp Lcont85
-Lcode85:
- push rbp
- mov rbp, rsp
- ;------------- copy env 86 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 86 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend86
-inc r11
-ploop86:
- cmp r11, 0
- je pend86
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop86
-pend86:
-;---------------- make closure 86 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode86)
-jmp Lcont86
-Lcode86:
- push rbp
- mov rbp, rsp
-;------ opt ----------------- 
- mov r8, [rbp + 8*3]
- mov r10, r8
- mov r11, 2
- sub r10, r11
- cmp r10, 0
- je end_opt86
-mov qword [rbp + 8*3], 3
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop86:
- cmp r10, 0
- je opt_end_loop86
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
- dec r10
- jmp opt_loop86
-opt_end_loop86:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+3)], rdx
-mov r11, r8
-sub r11,3
-add rbp, 8*(5 +2  )
-SHIFT_FRAME (4+3) , r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-;------ end opt ------------- 
- end_opt86:
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 2)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next116
-mov rax, SOB_FALSE_ADDRESS
-ret
-next116:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse87 
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-push 1 
-;------------- copy env 104 ----------------
-COPY_ENV 24 , 3
-mov r15, r14
-;---------------- copy args 104 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend104
-inc r11
-ploop104:
- cmp r11, 0
- je pend104
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop104
-pend104:
-;---------------- make closure 104 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode104)
-jmp Lcont104
-Lcode104:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 23
-push rax 
-push 1 
-;------------- copy env 106 ----------------
-COPY_ENV 32 , 4
-mov r15, r14
-;---------------- copy args 106 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend106
-inc r11
-ploop106:
- cmp r11, 0
- je pend106
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop106
-pend106:
-;---------------- make closure 106 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode106)
-jmp Lcont106
-Lcode106:
- push rbp
- mov rbp, rsp
- ;------------- copy env 107 ----------------
-COPY_ENV 40 , 5
-mov r15, r14
-;---------------- copy args 107 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend107
-inc r11
-ploop107:
- cmp r11, 0
- je pend107
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop107
-pend107:
-;---------------- make closure 107 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode107)
-jmp Lcont107
-Lcode107:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
 mov rax, qword [rax + 8*3] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next114
-mov rax, SOB_FALSE_ADDRESS
-ret
-next114:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse108 
- mov rax , const_tbl + 1
-jmp Lexit108 
- 
-                              Lelse108: 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*3] 
-mov rax, qword [rax + 8*4] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next111
-mov rax, SOB_FALSE_ADDRESS
-ret
-next111:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next110
-mov rax, SOB_FALSE_ADDRESS
-ret
-next110:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*3] 
-mov rax, qword [rax + 8*3] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next113
-mov rax, SOB_FALSE_ADDRESS
-ret
-next113:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next112
-mov rax, SOB_FALSE_ADDRESS
-ret
-next112:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*3] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next109
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next109:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-Lexit108: 
-
- leave
- ret
-Lcont107:
-mov qword [rbp + 8*( 4 + 0)] , rax 
-mov rax, SOB_VOID_ADDRESS 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next115
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next115:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont106:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next105
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next105:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont104:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next103
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next103:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-jmp Lexit87 
- 
-                              Lelse87: 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 2)] 
-push rax 
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-push 2 
-;------------- copy env 89 ----------------
-COPY_ENV 24 , 3
-mov r15, r14
-;---------------- copy args 89 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend89
-inc r11
-ploop89:
- cmp r11, 0
- je pend89
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop89
-pend89:
-;---------------- make closure 89 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode89)
-jmp Lcont89
-Lcode89:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 23
-push rax 
-push 1 
-;------------- copy env 91 ----------------
-COPY_ENV 32 , 4
-mov r15, r14
-;---------------- copy args 91 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend91
-inc r11
-ploop91:
- cmp r11, 0
- je pend91
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop91
-pend91:
-;---------------- make closure 91 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode91)
-jmp Lcont91
-Lcode91:
- push rbp
- mov rbp, rsp
- ;------------- copy env 92 ----------------
-COPY_ENV 40 , 5
-mov r15, r14
-;---------------- copy args 92 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend92
-inc r11
-ploop92:
- cmp r11, 0
- je pend92
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop92
-pend92:
-;---------------- make closure 92 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode92)
-jmp Lcont92
-Lcode92:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*3] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next101
-mov rax, SOB_FALSE_ADDRESS
-ret
-next101:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse93 
- mov rax , const_tbl + 1
-jmp Lexit93 
- 
-                              Lelse93: 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*3] 
-mov rax, qword [rax + 8*4] 
-push rax 
-push 2 
-mov rax, qword [fvar_tbl + 216] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next96
-mov rax, SOB_FALSE_ADDRESS
-ret
-next96:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*3] 
-mov rax, qword [rax + 8*4] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next97
-mov rax, SOB_FALSE_ADDRESS
-ret
-next97:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next95
-mov rax, SOB_FALSE_ADDRESS
-ret
-next95:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*3] 
-mov rax, qword [rax + 8*3] 
-push rax 
-push 2 
-mov rax, qword [fvar_tbl + 216] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next99
-mov rax, SOB_FALSE_ADDRESS
-ret
-next99:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*3] 
-mov rax, qword [rax + 8*3] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next100
-mov rax, SOB_FALSE_ADDRESS
-ret
-next100:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*0] 
-push rax 
-push 3 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*3] 
-mov rax, qword [rax + 8*2] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next98
-mov rax, SOB_FALSE_ADDRESS
-ret
-next98:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*3] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next94
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next94:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-Lexit93: 
-
- leave
- ret
-Lcont92:
-mov qword [rbp + 8*( 4 + 0)] , rax 
-mov rax, SOB_VOID_ADDRESS 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*1] 
-push rax 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next102
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next102:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont91:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next90
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next90:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont89:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next88
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next88:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-Lexit87: 
-
- leave
- ret
-Lcont86:
-
- leave
- ret
-Lcont85:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next84
-mov rax, SOB_FALSE_ADDRESS
-ret
-next84:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 216], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 152] 
-push rax 
-mov rax, qword [fvar_tbl + 144] 
-push rax 
-mov rax, qword [fvar_tbl + 168] 
-push rax 
-mov rax, qword [fvar_tbl + 88] 
-push rax 
-mov rax, qword [fvar_tbl + 80] 
-push rax 
-mov rax, qword [fvar_tbl + 136] 
-push rax 
-mov rax, qword [fvar_tbl + 72] 
-push rax 
-push 7 
-;------------- copy env 118 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 118 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend118
-inc r11
-ploop118:
- cmp r11, 0
- je pend118
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop118
-pend118:
-;---------------- make closure 118 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode118)
-jmp Lcont118
-Lcode118:
- push rbp
- mov rbp, rsp
- ;------------- copy env 119 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 119 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend119
-inc r11
-ploop119:
- cmp r11, 0
- je pend119
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop119
-pend119:
-;---------------- make closure 119 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode119)
-jmp Lcont119
-Lcode119:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 23
-push rax 
-push 1 
-;------------- copy env 121 ----------------
-COPY_ENV 24 , 3
-mov r15, r14
-;---------------- copy args 121 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend121
-inc r11
-ploop121:
- cmp r11, 0
- je pend121
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop121
-pend121:
-;---------------- make closure 121 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode121)
-jmp Lcont121
-Lcode121:
- push rbp
- mov rbp, rsp
- MALLOC rsi , 8
-mov rax, qword [rbp + 8 * (4 + 0)] 
-mov [rsi], rax
-mov rax, rsi
-mov qword [rbp + 8*( 4 + 0)] , rax 
-mov rax, SOB_VOID_ADDRESS 
-;------------- copy env 122 ----------------
-COPY_ENV 32 , 4
-mov r15, r14
-;---------------- copy args 122 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend122
-inc r11
-ploop122:
- cmp r11, 0
- je pend122
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop122
-pend122:
-;---------------- make closure 122 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode122)
-jmp Lcont122
-Lcode122:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
 je next131
@@ -3646,66 +6006,47 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse123 
- mov rax, qword [rbp + 8 * (4 + 1)] 
-jmp Lexit123 
- 
-                              Lelse123: 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next130
-mov rax, SOB_FALSE_ADDRESS
-ret
-next130:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse124 
- push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 2)] 
 push rax 
 mov rax , const_tbl + 41
 push rax 
 push 2 
 mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*6] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*1] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next126
+je t_next130
 mov rax, SOB_FALSE_ADDRESS
 ret
-next126:
+t_next130:
 push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 2) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+jmp Lexit25 
+ 
+                              Lelse25: 
+push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
 push 1 
 mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*6] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
 je next128
@@ -3720,12 +6061,14 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 push rax 
-mov rax, qword [rbp + 8 * (4 + 2)] 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*2] 
 push rax 
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-push 3 
-mov rax, qword [fvar_tbl + 240] 
+push 2 
+mov rax, qword [rbp + 8*2] 
+mov rax, qword [rax + 8*0] 
+mov rax, qword [rax + 8*4] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
 je next127
@@ -3739,14 +6082,13 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-mov rax, qword [rbp + 8 * (4 + 1)] 
 push rax 
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
 push 1 
 mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
+mov rax, qword [rax + 8*0] 
 mov rax, qword [rax + 8*3] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
@@ -3762,1069 +6104,16 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 push rax 
-push 3 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next125
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next125:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 3) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-jmp Lexit124 
- 
-                              Lelse124: 
-mov rax , const_tbl + 50
-Lexit124: 
-Lexit123: 
-
- leave
- ret
-Lcont122:
-push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-pop qword [rax] 
-
-                         mov rax, SOB_VOID_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 32
-push rax 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*5] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next134
-mov rax, SOB_FALSE_ADDRESS
-ret
-next134:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*4] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next133
-mov rax, SOB_FALSE_ADDRESS
-ret
-next133:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-push rax 
-push 3 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-mov rax, qword [rax] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next132
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next132:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 3) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont121:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next120
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next120:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont119:
-
- leave
- ret
-Lcont118:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next117
-mov rax, SOB_FALSE_ADDRESS
-ret
-next117:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 232], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 280] 
-push rax 
-mov rax, qword [fvar_tbl + 272] 
-push rax 
-mov rax, qword [fvar_tbl + 96] 
-push rax 
-mov rax, qword [fvar_tbl + 264] 
-push rax 
-mov rax, qword [fvar_tbl + 256] 
-push rax 
-push 5 
-;------------- copy env 136 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 136 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend136
-inc r11
-ploop136:
- cmp r11, 0
- je pend136
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop136
-pend136:
-;---------------- make closure 136 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode136)
-jmp Lcont136
-Lcode136:
- push rbp
- mov rbp, rsp
- ;------------- copy env 137 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 137 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend137
-inc r11
-ploop137:
- cmp r11, 0
- je pend137
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop137
-pend137:
-;---------------- make closure 137 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode137)
-jmp Lcont137
-Lcode137:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 23
-push rax 
-push 1 
-;------------- copy env 139 ----------------
-COPY_ENV 24 , 3
-mov r15, r14
-;---------------- copy args 139 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend139
-inc r11
-ploop139:
- cmp r11, 0
- je pend139
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop139
-pend139:
-;---------------- make closure 139 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode139)
-jmp Lcont139
-Lcode139:
- push rbp
- mov rbp, rsp
- MALLOC rsi , 8
-mov rax, qword [rbp + 8 * (4 + 0)] 
-mov [rsi], rax
-mov rax, rsi
-mov qword [rbp + 8*( 4 + 0)] , rax 
-mov rax, SOB_VOID_ADDRESS 
-;------------- copy env 140 ----------------
-COPY_ENV 32 , 4
-mov r15, r14
-;---------------- copy args 140 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend140
-inc r11
-ploop140:
- cmp r11, 0
- je pend140
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop140
-pend140:
-;---------------- make closure 140 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode140)
-jmp Lcont140
-Lcode140:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 32
-push rax 
-mov rax, qword [rbp + 8 * (4 + 2)] 
-push rax 
 push 2 
 mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
 mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next146
-mov rax, SOB_FALSE_ADDRESS
-ret
-next146:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse141 
- mov rax, qword [rbp + 8 * (4 + 1)] 
-jmp Lexit141 
- 
-                              Lelse141: 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 41
-push rax 
-mov rax, qword [rbp + 8 * (4 + 2)] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*4] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next143
-mov rax, SOB_FALSE_ADDRESS
-ret
-next143:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 1)] 
-push rax 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 2)] 
-push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
 mov rax, qword [rax + 8*1] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next145
+je t_next126
 mov rax, SOB_FALSE_ADDRESS
 ret
-next145:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov rax, qword [rax + 8*2] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next144
-mov rax, SOB_FALSE_ADDRESS
-ret
-next144:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 3 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next142
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next142:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 3) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-Lexit141: 
-
- leave
- ret
-Lcont140:
-push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-pop qword [rax] 
-
-                         mov rax, SOB_VOID_ADDRESS
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 41
-push rax 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*3] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next149
-mov rax, SOB_FALSE_ADDRESS
-ret
-next149:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*4] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next148
-mov rax, SOB_FALSE_ADDRESS
-ret
-next148:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax , const_tbl + 1
-push rax 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-push rax 
-push 3 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-mov rax, qword [rax] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next147
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next147:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 3) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont139:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next138
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next138:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont137:
-
- leave
- ret
-Lcont136:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next135
-mov rax, SOB_FALSE_ADDRESS
-ret
-next135:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 248], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 232] 
-push rax 
-push 1 
-;------------- copy env 151 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 151 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend151
-inc r11
-ploop151:
- cmp r11, 0
- je pend151
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop151
-pend151:
-;---------------- make closure 151 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode151)
-jmp Lcont151
-Lcode151:
- push rbp
- mov rbp, rsp
- ;------------- copy env 152 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 152 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend152
-inc r11
-ploop152:
- cmp r11, 0
- je pend152
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop152
-pend152:
-;---------------- make closure 152 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode152)
-jmp Lcont152
-Lcode152:
- push rbp
- mov rbp, rsp
-;------ opt ----------------- 
- mov r8, [rbp + 8*3]
- mov r10, r8
- mov r11, 0
- sub r10, r11
- cmp r10, 0
- je end_opt152
-mov qword [rbp + 8*3], 1
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop152:
- cmp r10, 0
- je opt_end_loop152
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
- dec r10
- jmp opt_loop152
-opt_end_loop152:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+1)], rdx
-mov r11, r8
-sub r11,1
-add rbp, 8*(5 +0  )
-SHIFT_FRAME (4+1) , r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-;------ end opt ------------- 
- end_opt152:
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next153
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next153:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont152:
-
- leave
- ret
-Lcont151:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next150
-mov rax, SOB_FALSE_ADDRESS
-ret
-next150:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 288], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 88] 
-push rax 
-mov rax, qword [fvar_tbl + 224] 
-push rax 
-mov rax, qword [fvar_tbl + 80] 
-push rax 
-mov rax, qword [fvar_tbl + 152] 
-push rax 
-mov rax, qword [fvar_tbl + 72] 
-push rax 
-push 5 
-;------------- copy env 155 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 155 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend155
-inc r11
-ploop155:
- cmp r11, 0
- je pend155
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop155
-pend155:
-;---------------- make closure 155 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode155)
-jmp Lcont155
-Lcode155:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 23
-push rax 
-push 1 
-;------------- copy env 157 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 157 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend157
-inc r11
-ploop157:
- cmp r11, 0
- je pend157
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop157
-pend157:
-;---------------- make closure 157 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode157)
-jmp Lcont157
-Lcode157:
- push rbp
- mov rbp, rsp
- MALLOC rsi , 8
-mov rax, qword [rbp + 8 * (4 + 0)] 
-mov [rsi], rax
-mov rax, rsi
-mov qword [rbp + 8*( 4 + 0)] , rax 
-mov rax, SOB_VOID_ADDRESS 
-;------------- copy env 158 ----------------
-COPY_ENV 24 , 3
-mov r15, r14
-;---------------- copy args 158 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend158
-inc r11
-ploop158:
- cmp r11, 0
- je pend158
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop158
-pend158:
-;---------------- make closure 158 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode158)
-jmp Lcont158
-Lcode158:
- push rbp
- mov rbp, rsp
-;------ opt ----------------- 
- mov r8, [rbp + 8*3]
- mov r10, r8
- mov r11, 0
- sub r10, r11
- cmp r10, 0
- je end_opt158
-mov qword [rbp + 8*3], 1
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop158:
- cmp r10, 0
- je opt_end_loop158
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
- dec r10
- jmp opt_loop158
-opt_end_loop158:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+1)], rdx
-mov r11, r8
-sub r11,1
-add rbp, 8*(5 +0  )
-SHIFT_FRAME (4+1) , r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-;------ end opt ------------- 
- end_opt158:
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next164
-mov rax, SOB_FALSE_ADDRESS
-ret
-next164:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse159 
- mov rax , const_tbl + 32
-jmp Lexit159 
- 
-                              Lelse159: 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*4] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next162
-mov rax, SOB_FALSE_ADDRESS
-ret
-next162:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*3] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next161
-mov rax, SOB_FALSE_ADDRESS
-ret
-next161:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*2] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next163
-mov rax, SOB_FALSE_ADDRESS
-ret
-next163:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next160
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next160:
+t_next126:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -4841,1461 +6130,22 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-Lexit159: 
+Lexit25: 
+Lexit24: 
 
  leave
  ret
-Lcont158:
-push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-pop qword [rax] 
-
-                         mov rax, SOB_VOID_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-mov rax, qword [rax] 
+Lcont53:
 
  leave
  ret
-Lcont157:
+Lcont52:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next156
+je next125
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next156:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont155:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next154
-mov rax, SOB_FALSE_ADDRESS
-ret
-next154:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 152], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 88] 
-push rax 
-mov rax, qword [fvar_tbl + 224] 
-push rax 
-mov rax, qword [fvar_tbl + 80] 
-push rax 
-mov rax, qword [fvar_tbl + 296] 
-push rax 
-mov rax, qword [fvar_tbl + 72] 
-push rax 
-push 5 
-;------------- copy env 166 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 166 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend166
-inc r11
-ploop166:
- cmp r11, 0
- je pend166
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop166
-pend166:
-;---------------- make closure 166 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode166)
-jmp Lcont166
-Lcode166:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 23
-push rax 
-push 1 
-;------------- copy env 168 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 168 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend168
-inc r11
-ploop168:
- cmp r11, 0
- je pend168
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop168
-pend168:
-;---------------- make closure 168 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode168)
-jmp Lcont168
-Lcode168:
- push rbp
- mov rbp, rsp
- MALLOC rsi , 8
-mov rax, qword [rbp + 8 * (4 + 0)] 
-mov [rsi], rax
-mov rax, rsi
-mov qword [rbp + 8*( 4 + 0)] , rax 
-mov rax, SOB_VOID_ADDRESS 
-;------------- copy env 169 ----------------
-COPY_ENV 24 , 3
-mov r15, r14
-;---------------- copy args 169 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend169
-inc r11
-ploop169:
- cmp r11, 0
- je pend169
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop169
-pend169:
-;---------------- make closure 169 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode169)
-jmp Lcont169
-Lcode169:
- push rbp
- mov rbp, rsp
-;------ opt ----------------- 
- mov r8, [rbp + 8*3]
- mov r10, r8
- mov r11, 0
- sub r10, r11
- cmp r10, 0
- je end_opt169
-mov qword [rbp + 8*3], 1
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop169:
- cmp r10, 0
- je opt_end_loop169
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
- dec r10
- jmp opt_loop169
-opt_end_loop169:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+1)], rdx
-mov r11, r8
-sub r11,1
-add rbp, 8*(5 +0  )
-SHIFT_FRAME (4+1) , r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-;------ end opt ------------- 
- end_opt169:
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next175
-mov rax, SOB_FALSE_ADDRESS
-ret
-next175:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse170 
- mov rax , const_tbl + 41
-jmp Lexit170 
- 
-                              Lelse170: 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*4] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next173
-mov rax, SOB_FALSE_ADDRESS
-ret
-next173:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*3] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next172
-mov rax, SOB_FALSE_ADDRESS
-ret
-next172:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*2] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next174
-mov rax, SOB_FALSE_ADDRESS
-ret
-next174:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next171
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next171:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-Lexit170: 
-
- leave
- ret
-Lcont169:
-push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-pop qword [rax] 
-
-                         mov rax, SOB_VOID_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-mov rax, qword [rax] 
-
- leave
- ret
-Lcont168:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next167
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next167:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont166:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next165
-mov rax, SOB_FALSE_ADDRESS
-ret
-next165:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 296], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 88] 
-push rax 
-mov rax, qword [fvar_tbl + 144] 
-push rax 
-mov rax, qword [fvar_tbl + 224] 
-push rax 
-mov rax, qword [fvar_tbl + 80] 
-push rax 
-mov rax, qword [fvar_tbl + 152] 
-push rax 
-mov rax, qword [fvar_tbl + 280] 
-push rax 
-mov rax, qword [fvar_tbl + 72] 
-push rax 
-push 7 
-;------------- copy env 177 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 177 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend177
-inc r11
-ploop177:
- cmp r11, 0
- je pend177
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop177
-pend177:
-;---------------- make closure 177 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode177)
-jmp Lcont177
-Lcode177:
- push rbp
- mov rbp, rsp
- push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 23
-push rax 
-push 1 
-;------------- copy env 179 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 179 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend179
-inc r11
-ploop179:
- cmp r11, 0
- je pend179
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop179
-pend179:
-;---------------- make closure 179 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode179)
-jmp Lcont179
-Lcode179:
- push rbp
- mov rbp, rsp
- MALLOC rsi , 8
-mov rax, qword [rbp + 8 * (4 + 0)] 
-mov [rsi], rax
-mov rax, rsi
-mov qword [rbp + 8*( 4 + 0)] , rax 
-mov rax, SOB_VOID_ADDRESS 
-;------------- copy env 180 ----------------
-COPY_ENV 24 , 3
-mov r15, r14
-;---------------- copy args 180 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend180
-inc r11
-ploop180:
- cmp r11, 0
- je pend180
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop180
-pend180:
-;---------------- make closure 180 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode180)
-jmp Lcont180
-Lcode180:
- push rbp
- mov rbp, rsp
-;------ opt ----------------- 
- mov r8, [rbp + 8*3]
- mov r10, r8
- mov r11, 0
- sub r10, r11
- cmp r10, 0
- je end_opt180
-mov qword [rbp + 8*3], 1
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop180:
- cmp r10, 0
- je opt_end_loop180
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
- dec r10
- jmp opt_loop180
-opt_end_loop180:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+1)], rdx
-mov r11, r8
-sub r11,1
-add rbp, 8*(5 +0  )
-SHIFT_FRAME (4+1) , r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-;------ end opt ------------- 
- end_opt180:
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next186
-mov rax, SOB_FALSE_ADDRESS
-ret
-next186:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse181 
- mov rax , const_tbl + 32
-jmp Lexit181 
- 
-                              Lelse181: 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*3] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next183
-mov rax, SOB_FALSE_ADDRESS
-ret
-next183:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*6] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next185
-mov rax, SOB_FALSE_ADDRESS
-ret
-next185:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*4] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next184
-mov rax, SOB_FALSE_ADDRESS
-ret
-next184:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next182
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next182:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-Lexit181: 
-
- leave
- ret
-Lcont180:
-push rax 
-mov rax, qword [rbp + 8 * (4 + 0)] 
-pop qword [rax] 
-
-                         mov rax, SOB_VOID_ADDRESS
-;------------- copy env 187 ----------------
-COPY_ENV 24 , 3
-mov r15, r14
-;---------------- copy args 187 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend187
-inc r11
-ploop187:
- cmp r11, 0
- je pend187
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop187
-pend187:
-;---------------- make closure 187 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode187)
-jmp Lcont187
-Lcode187:
- push rbp
- mov rbp, rsp
-;------ opt ----------------- 
- mov r8, [rbp + 8*3]
- mov r10, r8
- mov r11, 0
- sub r10, r11
- cmp r10, 0
- je end_opt187
-mov qword [rbp + 8*3], 1
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop187:
- cmp r10, 0
- je opt_end_loop187
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
- dec r10
- jmp opt_loop187
-opt_end_loop187:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+1)], rdx
-mov r11, r8
-sub r11,1
-add rbp, 8*(5 +0  )
-SHIFT_FRAME (4+1) , r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-;------ end opt ------------- 
- end_opt187:
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next198
-mov rax, SOB_FALSE_ADDRESS
-ret
-next198:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse188 
- mov rax , const_tbl + 50
-jmp Lexit188 
- 
-                              Lelse188: 
-push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 41
-push rax 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*5] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next197
-mov rax, SOB_FALSE_ADDRESS
-ret
-next197:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [fvar_tbl + 112] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next196
-mov rax, SOB_FALSE_ADDRESS
-ret
-next196:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse189 
- push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*3] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next195
-mov rax, SOB_FALSE_ADDRESS
-ret
-next195:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax , const_tbl + 32
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next194
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next194:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-jmp Lexit189 
- 
-                              Lelse189: 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*6] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next192
-mov rax, SOB_FALSE_ADDRESS
-ret
-next192:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*4] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next191
-mov rax, SOB_FALSE_ADDRESS
-ret
-next191:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*3] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next193
-mov rax, SOB_FALSE_ADDRESS
-ret
-next193:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*1] 
-mov rax, qword [rax + 8*2] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next190
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next190:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-Lexit189: 
-Lexit188: 
-
- leave
- ret
-Lcont187:
-
- leave
- ret
-Lcont179:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next178
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next178:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 1) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-
- leave
- ret
-Lcont177:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next176
-mov rax, SOB_FALSE_ADDRESS
-ret
-next176:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-mov qword [fvar_tbl + 280], rax 
-mov rax, SOB_VOID_ADDRESS 
-
-    call write_sob_if_not_void
-
-push qword SOB_NIL_ADDRESS
-mov rax, qword [fvar_tbl + 88] 
-push rax 
-mov rax, qword [fvar_tbl + 144] 
-push rax 
-mov rax, qword [fvar_tbl + 224] 
-push rax 
-mov rax, qword [fvar_tbl + 80] 
-push rax 
-mov rax, qword [fvar_tbl + 296] 
-push rax 
-mov rax, qword [fvar_tbl + 304] 
-push rax 
-mov rax, qword [fvar_tbl + 72] 
-push rax 
-push 7 
-;------------- copy env 200 ----------------
-COPY_ENV 8 , 1
-mov r15, r14
-;---------------- copy args 200 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend200
-inc r11
-ploop200:
- cmp r11, 0
- je pend200
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop200
-pend200:
-;---------------- make closure 200 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode200)
-jmp Lcont200
-Lcode200:
- push rbp
- mov rbp, rsp
- ;------------- copy env 201 ----------------
-COPY_ENV 16 , 2
-mov r15, r14
-;---------------- copy args 201 ----------------
-mov r11, qword [rbp + 8*3]
-inc r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-mov r11, rax
-MALLOC r13, r11
-mov [r15], r13
-mov r10, rbp
-mov r12, 8*4
-add r10, r12
-mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend201
-inc r11
-ploop201:
- cmp r11, 0
- je pend201
- mov r14, [r10]
- mov [r13], r14
- add r10, 8
- add r13, 8
- dec r11
- jmp ploop201
-pend201:
-;---------------- make closure 201 ----------------
-mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode201)
-jmp Lcont201
-Lcode201:
- push rbp
- mov rbp, rsp
-;------ opt ----------------- 
- mov r8, [rbp + 8*3]
- mov r10, r8
- mov r11, 0
- sub r10, r11
- cmp r10, 0
- je end_opt201
-mov qword [rbp + 8*3], 1
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop201:
- cmp r10, 0
- je opt_end_loop201
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
- dec r10
- jmp opt_loop201
-opt_end_loop201:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+1)], rdx
-mov r11, r8
-sub r11,1
-add rbp, 8*(5 +0  )
-SHIFT_FRAME (4+1) , r11
-mov rax, r11
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-;------ end opt ------------- 
- end_opt201:
- push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*0] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next212
-mov rax, SOB_FALSE_ADDRESS
-ret
-next212:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse202 
- mov rax , const_tbl + 50
-jmp Lexit202 
- 
-                              Lelse202: 
-push qword SOB_NIL_ADDRESS
-mov rax , const_tbl + 41
-push rax 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*5] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next211
-mov rax, SOB_FALSE_ADDRESS
-ret
-next211:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [fvar_tbl + 112] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next210
-mov rax, SOB_FALSE_ADDRESS
-ret
-next210:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-cmp rax, SOB_FALSE_ADDRESS 
-je Lelse203 
- push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*3] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next209
-mov rax, SOB_FALSE_ADDRESS
-ret
-next209:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax , const_tbl + 41
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next208
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next208:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-jmp Lexit203 
- 
-                              Lelse203: 
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*6] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next206
-mov rax, SOB_FALSE_ADDRESS
-ret
-next206:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*2] 
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*4] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next205
-mov rax, SOB_FALSE_ADDRESS
-ret
-next205:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push qword SOB_NIL_ADDRESS
-mov rax, qword [rbp + 8 * (4 + 0)] 
-push rax 
-push 1 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*3] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next207
-mov rax, SOB_FALSE_ADDRESS
-ret
-next207:
-push qword [rax + 1]
-call [rax + 9]
-add rsp, 8*1 
-pop rbx
-inc rbx
-shl rbx, 3
-add rsp, rbx
-push rax 
-push 2 
-mov rax, qword [rbp + 8*2] 
-mov rax, qword [rax + 8*0] 
-mov rax, qword [rax + 8*1] 
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je t_next204
-mov rax, SOB_FALSE_ADDRESS
-ret
-t_next204:
-push qword [rax + 1]
-push qword [rbp + 8 * 1]
-mov r10, [rbp + 8*3]
-add r10, 5
-mov r15, qword [rbp]
-SHIFT_FRAME (5 + 2) , r10
-mov rdi , rax
-mov rax, r10
-mov rdx, 8
-mul rdx
-add rsp, rax
-mov rbp, rsp
-mov rax, rdi
-CLOSURE_CODE r11 , rax
-mov rbp, r15
-jmp r11
-Lexit203: 
-Lexit202: 
-
- leave
- ret
-Lcont201:
-
- leave
- ret
-Lcont200:
-mov sil, [rax]
-cmp sil, T_CLOSURE
-je next199
-mov rax, SOB_FALSE_ADDRESS
-ret
-next199:
+next125:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -6318,10 +6168,10 @@ push rax
 mov rax, qword [fvar_tbl + 72] 
 push rax 
 push 4 
-;------------- copy env 214 ----------------
+;------------- copy env 54 ----------------
 COPY_ENV 8 , 1
 mov r15, r14
-;---------------- copy args 214 ----------------
+;---------------- copy args 54 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -6334,34 +6184,34 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend214
 inc r11
-ploop214:
  cmp r11, 0
- je pend214
+ je pend54
+ploop54:
+ cmp r11, 0
+ je pend54
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop214
-pend214:
-;---------------- make closure 214 ----------------
+ jmp ploop54
+pend54:
+;---------------- make closure 54 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode214)
-jmp Lcont214
-Lcode214:
+MAKE_CLOSURE(rax , r12 , Lcode54)
+jmp Lcont54
+Lcode54:
  push rbp
  mov rbp, rsp
  push qword SOB_NIL_ADDRESS
 mov rax , const_tbl + 23
 push rax 
 push 1 
-;------------- copy env 216 ----------------
+;------------- copy env 55 ----------------
 COPY_ENV 16 , 2
 mov r15, r14
-;---------------- copy args 216 ----------------
+;---------------- copy args 55 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -6374,24 +6224,24 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend216
 inc r11
-ploop216:
  cmp r11, 0
- je pend216
+ je pend55
+ploop55:
+ cmp r11, 0
+ je pend55
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop216
-pend216:
-;---------------- make closure 216 ----------------
+ jmp ploop55
+pend55:
+;---------------- make closure 55 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode216)
-jmp Lcont216
-Lcode216:
+MAKE_CLOSURE(rax , r12 , Lcode55)
+jmp Lcont55
+Lcode55:
  push rbp
  mov rbp, rsp
  MALLOC rsi , 8
@@ -6400,10 +6250,10 @@ mov [rsi], rax
 mov rax, rsi
 mov qword [rbp + 8*( 4 + 0)] , rax 
 mov rax, SOB_VOID_ADDRESS 
-;------------- copy env 217 ----------------
+;------------- copy env 56 ----------------
 COPY_ENV 24 , 3
 mov r15, r14
-;---------------- copy args 217 ----------------
+;---------------- copy args 56 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -6416,24 +6266,24 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend217
 inc r11
-ploop217:
  cmp r11, 0
- je pend217
+ je pend56
+ploop56:
+ cmp r11, 0
+ je pend56
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop217
-pend217:
-;---------------- make closure 217 ----------------
+ jmp ploop56
+pend56:
+;---------------- make closure 56 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode217)
-jmp Lcont217
-Lcode217:
+MAKE_CLOSURE(rax , r12 , Lcode56)
+jmp Lcont56
+Lcode56:
  push rbp
  mov rbp, rsp
  push qword SOB_NIL_ADDRESS
@@ -6445,10 +6295,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next225
+je next142
 mov rax, SOB_FALSE_ADDRESS
 ret
-next225:
+next142:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -6457,11 +6307,11 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse218 
+je Lelse26 
  mov rax , const_tbl + 4
-jmp Lexit218 
+jmp Lexit26 
  
-                              Lelse218: 
+                              Lelse26: 
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
@@ -6472,10 +6322,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*2] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next224
+je next141
 mov rax, SOB_FALSE_ADDRESS
 ret
-next224:
+next141:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -6492,10 +6342,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*1] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next223
+je next140
 mov rax, SOB_FALSE_ADDRESS
 ret
-next223:
+next140:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -6504,7 +6354,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse219 
+je Lelse27 
  push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
@@ -6515,10 +6365,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*3] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next221
+je next138
 mov rax, SOB_FALSE_ADDRESS
 ret
-next221:
+next138:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -6536,10 +6386,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*2] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next222
+je next139
 mov rax, SOB_FALSE_ADDRESS
 ret
-next222:
+next139:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -6555,10 +6405,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next220
+je t_next137
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next220:
+t_next137:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -6575,25 +6425,24 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-jmp Lexit219 
+jmp Lexit27 
  
-                              Lelse219: 
+                              Lelse27: 
 mov rax , const_tbl + 2
-Lexit219: 
-Lexit218: 
+Lexit27: 
+Lexit26: 
 
  leave
  ret
-Lcont217:
+Lcont56:
 push rax 
 mov rax, qword [rbp + 8 * (4 + 0)] 
 pop qword [rax] 
-
-                         mov rax, SOB_VOID_ADDRESS
-;------------- copy env 226 ----------------
+mov rax, SOB_VOID_ADDRESS
+;------------- copy env 57 ----------------
 COPY_ENV 24 , 3
 mov r15, r14
-;---------------- copy args 226 ----------------
+;---------------- copy args 57 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -6606,67 +6455,50 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend226
 inc r11
-ploop226:
  cmp r11, 0
- je pend226
+ je pend57
+ploop57:
+ cmp r11, 0
+ je pend57
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop226
-pend226:
-;---------------- make closure 226 ----------------
+ jmp ploop57
+pend57:
+;---------------- make closure 57 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode226)
-jmp Lcont226
-Lcode226:
+MAKE_CLOSURE(rax , r12 , Lcode57)
+jmp Lcont57
+Lcode57:
  push rbp
  mov rbp, rsp
 ;------ opt ----------------- 
- mov r8, [rbp + 8*3]
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
  mov r10, r8
  mov r11, 0
  sub r10, r11
  cmp r10, 0
- je end_opt226
+ je end_opt57
 mov qword [rbp + 8*3], 1
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop226:
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls57:
  cmp r10, 0
- je opt_end_loop226
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
+ je end_make_ls57
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
  dec r10
- jmp opt_loop226
-opt_end_loop226:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+1)], rdx
-mov r11, r8
+ jmp make_ls57
+ end_make_ls57:
+mov [rbp + 8*(3 + 1)] , r11
+mov r11, r15
 sub r11,1
 add rbp, 8*(5 +0  )
 SHIFT_FRAME (4+1) , r11
@@ -6676,7 +6508,7 @@ mul rdx
 add rsp, rax
 mov rbp, rsp
 ;------ end opt ------------- 
- end_opt226:
+ end_opt57:
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
@@ -6686,10 +6518,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next231
+je next146
 mov rax, SOB_FALSE_ADDRESS
 ret
-next231:
+next146:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -6698,11 +6530,11 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse227 
+je Lelse28 
  mov rax , const_tbl + 50
-jmp Lexit227 
+jmp Lexit28 
  
-                              Lelse227: 
+                              Lelse28: 
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
@@ -6713,10 +6545,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*3] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next229
+je next144
 mov rax, SOB_FALSE_ADDRESS
 ret
-next229:
+next144:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -6734,10 +6566,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*2] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next230
+je next145
 mov rax, SOB_FALSE_ADDRESS
 ret
-next230:
+next145:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -6753,10 +6585,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next228
+je t_next143
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next228:
+t_next143:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -6773,21 +6605,21 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-Lexit227: 
+Lexit28: 
 
  leave
  ret
-Lcont226:
+Lcont57:
 
  leave
  ret
-Lcont216:
+Lcont55:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next215
+je t_next136
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next215:
+t_next136:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -6807,13 +6639,13 @@ jmp r11
 
  leave
  ret
-Lcont214:
+Lcont54:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next213
+je next135
 mov rax, SOB_FALSE_ADDRESS
 ret
-next213:
+next135:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -6836,10 +6668,10 @@ push rax
 mov rax, qword [fvar_tbl + 72] 
 push rax 
 push 4 
-;------------- copy env 233 ----------------
+;------------- copy env 58 ----------------
 COPY_ENV 8 , 1
 mov r15, r14
-;---------------- copy args 233 ----------------
+;---------------- copy args 58 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -6852,34 +6684,34 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend233
 inc r11
-ploop233:
  cmp r11, 0
- je pend233
+ je pend58
+ploop58:
+ cmp r11, 0
+ je pend58
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop233
-pend233:
-;---------------- make closure 233 ----------------
+ jmp ploop58
+pend58:
+;---------------- make closure 58 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode233)
-jmp Lcont233
-Lcode233:
+MAKE_CLOSURE(rax , r12 , Lcode58)
+jmp Lcont58
+Lcode58:
  push rbp
  mov rbp, rsp
  push qword SOB_NIL_ADDRESS
 mov rax , const_tbl + 23
 push rax 
 push 1 
-;------------- copy env 235 ----------------
+;------------- copy env 59 ----------------
 COPY_ENV 16 , 2
 mov r15, r14
-;---------------- copy args 235 ----------------
+;---------------- copy args 59 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -6892,24 +6724,24 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend235
 inc r11
-ploop235:
  cmp r11, 0
- je pend235
+ je pend59
+ploop59:
+ cmp r11, 0
+ je pend59
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop235
-pend235:
-;---------------- make closure 235 ----------------
+ jmp ploop59
+pend59:
+;---------------- make closure 59 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode235)
-jmp Lcont235
-Lcode235:
+MAKE_CLOSURE(rax , r12 , Lcode59)
+jmp Lcont59
+Lcode59:
  push rbp
  mov rbp, rsp
  MALLOC rsi , 8
@@ -6918,10 +6750,10 @@ mov [rsi], rax
 mov rax, rsi
 mov qword [rbp + 8*( 4 + 0)] , rax 
 mov rax, SOB_VOID_ADDRESS 
-;------------- copy env 236 ----------------
+;------------- copy env 60 ----------------
 COPY_ENV 24 , 3
 mov r15, r14
-;---------------- copy args 236 ----------------
+;---------------- copy args 60 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -6934,24 +6766,24 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend236
 inc r11
-ploop236:
  cmp r11, 0
- je pend236
+ je pend60
+ploop60:
+ cmp r11, 0
+ je pend60
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop236
-pend236:
-;---------------- make closure 236 ----------------
+ jmp ploop60
+pend60:
+;---------------- make closure 60 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode236)
-jmp Lcont236
-Lcode236:
+MAKE_CLOSURE(rax , r12 , Lcode60)
+jmp Lcont60
+Lcode60:
  push rbp
  mov rbp, rsp
  push qword SOB_NIL_ADDRESS
@@ -6963,10 +6795,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next244
+je next154
 mov rax, SOB_FALSE_ADDRESS
 ret
-next244:
+next154:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -6975,11 +6807,11 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse237 
+je Lelse29 
  mov rax , const_tbl + 4
-jmp Lexit237 
+jmp Lexit29 
  
-                              Lelse237: 
+                              Lelse29: 
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
@@ -6990,10 +6822,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*2] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next243
+je next153
 mov rax, SOB_FALSE_ADDRESS
 ret
-next243:
+next153:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7010,10 +6842,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*1] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next242
+je next152
 mov rax, SOB_FALSE_ADDRESS
 ret
-next242:
+next152:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7022,7 +6854,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse238 
+je Lelse30 
  push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
@@ -7033,10 +6865,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*3] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next240
+je next150
 mov rax, SOB_FALSE_ADDRESS
 ret
-next240:
+next150:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7054,10 +6886,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*2] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next241
+je next151
 mov rax, SOB_FALSE_ADDRESS
 ret
-next241:
+next151:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7073,10 +6905,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next239
+je t_next149
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next239:
+t_next149:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -7093,25 +6925,24 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-jmp Lexit238 
+jmp Lexit30 
  
-                              Lelse238: 
+                              Lelse30: 
 mov rax , const_tbl + 2
-Lexit238: 
-Lexit237: 
+Lexit30: 
+Lexit29: 
 
  leave
  ret
-Lcont236:
+Lcont60:
 push rax 
 mov rax, qword [rbp + 8 * (4 + 0)] 
 pop qword [rax] 
-
-                         mov rax, SOB_VOID_ADDRESS
-;------------- copy env 245 ----------------
+mov rax, SOB_VOID_ADDRESS
+;------------- copy env 61 ----------------
 COPY_ENV 24 , 3
 mov r15, r14
-;---------------- copy args 245 ----------------
+;---------------- copy args 61 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -7124,67 +6955,50 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend245
 inc r11
-ploop245:
  cmp r11, 0
- je pend245
+ je pend61
+ploop61:
+ cmp r11, 0
+ je pend61
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop245
-pend245:
-;---------------- make closure 245 ----------------
+ jmp ploop61
+pend61:
+;---------------- make closure 61 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode245)
-jmp Lcont245
-Lcode245:
+MAKE_CLOSURE(rax , r12 , Lcode61)
+jmp Lcont61
+Lcode61:
  push rbp
  mov rbp, rsp
 ;------ opt ----------------- 
- mov r8, [rbp + 8*3]
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
  mov r10, r8
  mov r11, 0
  sub r10, r11
  cmp r10, 0
- je end_opt245
+ je end_opt61
 mov qword [rbp + 8*3], 1
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop245:
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls61:
  cmp r10, 0
- je opt_end_loop245
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
+ je end_make_ls61
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
  dec r10
- jmp opt_loop245
-opt_end_loop245:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+1)], rdx
-mov r11, r8
+ jmp make_ls61
+ end_make_ls61:
+mov [rbp + 8*(3 + 1)] , r11
+mov r11, r15
 sub r11,1
 add rbp, 8*(5 +0  )
 SHIFT_FRAME (4+1) , r11
@@ -7194,7 +7008,7 @@ mul rdx
 add rsp, rax
 mov rbp, rsp
 ;------ end opt ------------- 
- end_opt245:
+ end_opt61:
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
@@ -7204,10 +7018,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next250
+je next158
 mov rax, SOB_FALSE_ADDRESS
 ret
-next250:
+next158:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7216,11 +7030,11 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse246 
+je Lelse31 
  mov rax , const_tbl + 50
-jmp Lexit246 
+jmp Lexit31 
  
-                              Lelse246: 
+                              Lelse31: 
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
@@ -7231,10 +7045,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*3] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next248
+je next156
 mov rax, SOB_FALSE_ADDRESS
 ret
-next248:
+next156:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7252,10 +7066,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*2] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next249
+je next157
 mov rax, SOB_FALSE_ADDRESS
 ret
-next249:
+next157:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7271,10 +7085,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next247
+je t_next155
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next247:
+t_next155:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -7291,21 +7105,21 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-Lexit246: 
+Lexit31: 
 
  leave
  ret
-Lcont245:
+Lcont61:
 
  leave
  ret
-Lcont235:
+Lcont59:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next234
+je t_next148
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next234:
+t_next148:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -7325,13 +7139,13 @@ jmp r11
 
  leave
  ret
-Lcont233:
+Lcont58:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next232
+je next147
 mov rax, SOB_FALSE_ADDRESS
 ret
-next232:
+next147:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7358,10 +7172,10 @@ push rax
 mov rax, qword [fvar_tbl + 72] 
 push rax 
 push 6 
-;------------- copy env 252 ----------------
+;------------- copy env 62 ----------------
 COPY_ENV 8 , 1
 mov r15, r14
-;---------------- copy args 252 ----------------
+;---------------- copy args 62 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -7374,34 +7188,34 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend252
 inc r11
-ploop252:
  cmp r11, 0
- je pend252
+ je pend62
+ploop62:
+ cmp r11, 0
+ je pend62
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop252
-pend252:
-;---------------- make closure 252 ----------------
+ jmp ploop62
+pend62:
+;---------------- make closure 62 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode252)
-jmp Lcont252
-Lcode252:
+MAKE_CLOSURE(rax , r12 , Lcode62)
+jmp Lcont62
+Lcode62:
  push rbp
  mov rbp, rsp
  push qword SOB_NIL_ADDRESS
 mov rax , const_tbl + 23
 push rax 
 push 1 
-;------------- copy env 254 ----------------
+;------------- copy env 63 ----------------
 COPY_ENV 16 , 2
 mov r15, r14
-;---------------- copy args 254 ----------------
+;---------------- copy args 63 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -7414,24 +7228,24 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend254
 inc r11
-ploop254:
  cmp r11, 0
- je pend254
+ je pend63
+ploop63:
+ cmp r11, 0
+ je pend63
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop254
-pend254:
-;---------------- make closure 254 ----------------
+ jmp ploop63
+pend63:
+;---------------- make closure 63 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode254)
-jmp Lcont254
-Lcode254:
+MAKE_CLOSURE(rax , r12 , Lcode63)
+jmp Lcont63
+Lcode63:
  push rbp
  mov rbp, rsp
  MALLOC rsi , 8
@@ -7440,10 +7254,10 @@ mov [rsi], rax
 mov rax, rsi
 mov qword [rbp + 8*( 4 + 0)] , rax 
 mov rax, SOB_VOID_ADDRESS 
-;------------- copy env 255 ----------------
+;------------- copy env 64 ----------------
 COPY_ENV 24 , 3
 mov r15, r14
-;---------------- copy args 255 ----------------
+;---------------- copy args 64 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -7456,24 +7270,24 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend255
 inc r11
-ploop255:
  cmp r11, 0
- je pend255
+ je pend64
+ploop64:
+ cmp r11, 0
+ je pend64
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop255
-pend255:
-;---------------- make closure 255 ----------------
+ jmp ploop64
+pend64:
+;---------------- make closure 64 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode255)
-jmp Lcont255
-Lcode255:
+MAKE_CLOSURE(rax , r12 , Lcode64)
+jmp Lcont64
+Lcode64:
  push rbp
  mov rbp, rsp
  push qword SOB_NIL_ADDRESS
@@ -7485,10 +7299,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next267
+je next169
 mov rax, SOB_FALSE_ADDRESS
 ret
-next267:
+next169:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7497,11 +7311,11 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse256 
+je Lelse32 
  mov rax , const_tbl + 4
-jmp Lexit256 
+jmp Lexit32 
  
-                              Lelse256: 
+                              Lelse32: 
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
@@ -7513,10 +7327,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*4] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next266
+je next168
 mov rax, SOB_FALSE_ADDRESS
 ret
-next266:
+next168:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7533,10 +7347,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*1] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next265
+je next167
 mov rax, SOB_FALSE_ADDRESS
 ret
-next265:
+next167:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7545,7 +7359,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
- jne orLexit262 
+ jne orLexit34 
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
@@ -7556,10 +7370,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*4] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next264
+je next166
 mov rax, SOB_FALSE_ADDRESS
 ret
-next264:
+next166:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7576,10 +7390,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*2] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next263
+je next165
 mov rax, SOB_FALSE_ADDRESS
 ret
-next263:
+next165:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7587,7 +7401,7 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-orLexit262: 
+orLexit34: 
 push rax 
 push 1 
 mov rax, qword [rbp + 8*2] 
@@ -7595,10 +7409,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*3] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next261
+je next164
 mov rax, SOB_FALSE_ADDRESS
 ret
-next261:
+next164:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7607,7 +7421,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse257 
+je Lelse33 
  push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
@@ -7618,10 +7432,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*5] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next259
+je next162
 mov rax, SOB_FALSE_ADDRESS
 ret
-next259:
+next162:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7639,10 +7453,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*4] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next260
+je next163
 mov rax, SOB_FALSE_ADDRESS
 ret
-next260:
+next163:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7658,10 +7472,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next258
+je t_next161
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next258:
+t_next161:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -7678,25 +7492,24 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-jmp Lexit257 
+jmp Lexit33 
  
-                              Lelse257: 
+                              Lelse33: 
 mov rax , const_tbl + 2
-Lexit257: 
-Lexit256: 
+Lexit33: 
+Lexit32: 
 
  leave
  ret
-Lcont255:
+Lcont64:
 push rax 
 mov rax, qword [rbp + 8 * (4 + 0)] 
 pop qword [rax] 
-
-                         mov rax, SOB_VOID_ADDRESS
-;------------- copy env 268 ----------------
+mov rax, SOB_VOID_ADDRESS
+;------------- copy env 65 ----------------
 COPY_ENV 24 , 3
 mov r15, r14
-;---------------- copy args 268 ----------------
+;---------------- copy args 65 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -7709,67 +7522,50 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend268
 inc r11
-ploop268:
  cmp r11, 0
- je pend268
+ je pend65
+ploop65:
+ cmp r11, 0
+ je pend65
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop268
-pend268:
-;---------------- make closure 268 ----------------
+ jmp ploop65
+pend65:
+;---------------- make closure 65 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode268)
-jmp Lcont268
-Lcode268:
+MAKE_CLOSURE(rax , r12 , Lcode65)
+jmp Lcont65
+Lcode65:
  push rbp
  mov rbp, rsp
 ;------ opt ----------------- 
- mov r8, [rbp + 8*3]
+ mov r8,  [rbp + 8*3]
+ mov r15, [rbp + 8*3]
  mov r10, r8
  mov r11, 0
  sub r10, r11
  cmp r10, 0
- je end_opt268
+ je end_opt65
 mov qword [rbp + 8*3], 1
-mov rax, r10
-dec rax
-mov rdx, 8
-mul rdx
-mov r15, rax
-sub r15, 8
-MALLOC r11, rax
-add r11, r15
-mov r12, r8
-add r12, 3
-mov rax, r12
-mov rdx, 8
-mul rdx
-mov r12, rax
-mov r13, rbp
-add r13, r12
-mov r9, r10
-dec r9
-opt_loop268:
+mov r9, [rbp + 8*(3+r8)]
+MAKE_PAIR(r11 , r9 , SOB_NIL_ADDRESS)
+dec r10
+make_ls65:
  cmp r10, 0
- je opt_end_loop268
- mov r14, [r13]
- mov qword [r11], r14
- sub r13, 8
- sub r11, 8
+ je end_make_ls65
+ dec r8
+ mov r9, [rbp + 8*(3+r8)]
+ MAKE_PAIR(r12 , r9 , r11)
+ mov r11, r12
  dec r10
- jmp opt_loop268
-opt_end_loop268:
- add r11, 8
-add r11, r15
-MAKE_LIST r11 , r9
-mov [rbp + 8*(3+1)], rdx
-mov r11, r8
+ jmp make_ls65
+ end_make_ls65:
+mov [rbp + 8*(3 + 1)] , r11
+mov r11, r15
 sub r11,1
 add rbp, 8*(5 +0  )
 SHIFT_FRAME (4+1) , r11
@@ -7779,7 +7575,7 @@ mul rdx
 add rsp, rax
 mov rbp, rsp
 ;------ end opt ------------- 
- end_opt268:
+ end_opt65:
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
@@ -7789,10 +7585,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next273
+je next173
 mov rax, SOB_FALSE_ADDRESS
 ret
-next273:
+next173:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7801,11 +7597,11 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse269 
+je Lelse35 
  mov rax , const_tbl + 50
-jmp Lexit269 
+jmp Lexit35 
  
-                              Lelse269: 
+                              Lelse35: 
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
@@ -7816,10 +7612,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*5] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next271
+je next171
 mov rax, SOB_FALSE_ADDRESS
 ret
-next271:
+next171:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7837,10 +7633,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*4] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next272
+je next172
 mov rax, SOB_FALSE_ADDRESS
 ret
-next272:
+next172:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7856,10 +7652,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next270
+je t_next170
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next270:
+t_next170:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -7876,21 +7672,21 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-Lexit269: 
+Lexit35: 
 
  leave
  ret
-Lcont268:
+Lcont65:
 
  leave
  ret
-Lcont254:
+Lcont63:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next253
+je t_next160
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next253:
+t_next160:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -7910,13 +7706,13 @@ jmp r11
 
  leave
  ret
-Lcont252:
+Lcont62:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next251
+je next159
 mov rax, SOB_FALSE_ADDRESS
 ret
-next251:
+next159:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -7967,10 +7763,10 @@ push rax
 mov rax, qword [fvar_tbl + 256] 
 push rax 
 push 18 
-;------------- copy env 275 ----------------
+;------------- copy env 66 ----------------
 COPY_ENV 8 , 1
 mov r15, r14
-;---------------- copy args 275 ----------------
+;---------------- copy args 66 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -7983,31 +7779,31 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend275
 inc r11
-ploop275:
  cmp r11, 0
- je pend275
+ je pend66
+ploop66:
+ cmp r11, 0
+ je pend66
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop275
-pend275:
-;---------------- make closure 275 ----------------
+ jmp ploop66
+pend66:
+;---------------- make closure 66 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode275)
-jmp Lcont275
-Lcode275:
+MAKE_CLOSURE(rax , r12 , Lcode66)
+jmp Lcont66
+Lcode66:
  push rbp
  mov rbp, rsp
  push qword SOB_NIL_ADDRESS
-;------------- copy env 319 ----------------
+;------------- copy env 69 ----------------
 COPY_ENV 16 , 2
 mov r15, r14
-;---------------- copy args 319 ----------------
+;---------------- copy args 69 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -8020,34 +7816,34 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend319
 inc r11
-ploop319:
  cmp r11, 0
- je pend319
+ je pend69
+ploop69:
+ cmp r11, 0
+ je pend69
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop319
-pend319:
-;---------------- make closure 319 ----------------
+ jmp ploop69
+pend69:
+;---------------- make closure 69 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode319)
-jmp Lcont319
-Lcode319:
+MAKE_CLOSURE(rax , r12 , Lcode69)
+jmp Lcont69
+Lcode69:
  push rbp
  mov rbp, rsp
  push qword SOB_NIL_ADDRESS
 mov rax , const_tbl + 23
 push rax 
 push 1 
-;------------- copy env 321 ----------------
+;------------- copy env 70 ----------------
 COPY_ENV 24 , 3
 mov r15, r14
-;---------------- copy args 321 ----------------
+;---------------- copy args 70 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -8060,24 +7856,24 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend321
 inc r11
-ploop321:
  cmp r11, 0
- je pend321
+ je pend70
+ploop70:
+ cmp r11, 0
+ je pend70
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop321
-pend321:
-;---------------- make closure 321 ----------------
+ jmp ploop70
+pend70:
+;---------------- make closure 70 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode321)
-jmp Lcont321
-Lcode321:
+MAKE_CLOSURE(rax , r12 , Lcode70)
+jmp Lcont70
+Lcode70:
  push rbp
  mov rbp, rsp
  MALLOC rsi , 8
@@ -8086,10 +7882,10 @@ mov [rsi], rax
 mov rax, rsi
 mov qword [rbp + 8*( 4 + 0)] , rax 
 mov rax, SOB_VOID_ADDRESS 
-;------------- copy env 322 ----------------
+;------------- copy env 71 ----------------
 COPY_ENV 32 , 4
 mov r15, r14
-;---------------- copy args 322 ----------------
+;---------------- copy args 71 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -8102,24 +7898,24 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend322
 inc r11
-ploop322:
  cmp r11, 0
- je pend322
+ je pend71
+ploop71:
+ cmp r11, 0
+ je pend71
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop322
-pend322:
-;---------------- make closure 322 ----------------
+ jmp ploop71
+pend71:
+;---------------- make closure 71 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode322)
-jmp Lcont322
-Lcode322:
+MAKE_CLOSURE(rax , r12 , Lcode71)
+jmp Lcont71
+Lcode71:
  push rbp
  mov rbp, rsp
  push qword SOB_NIL_ADDRESS
@@ -8133,10 +7929,10 @@ mov rax, qword [rax + 8*2]
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next330
+je next208
 mov rax, SOB_FALSE_ADDRESS
 ret
-next330:
+next208:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8145,11 +7941,11 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse323 
+je Lelse50 
  mov rax , const_tbl + 4
-jmp Lexit323 
+jmp Lexit50 
  
-                              Lelse323: 
+                              Lelse50: 
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 3)] 
@@ -8160,10 +7956,10 @@ push 2
 mov rax, qword [rbp + 8 * (4 + 2)] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next328
+je next206
 mov rax, SOB_FALSE_ADDRESS
 ret
-next328:
+next206:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8181,10 +7977,10 @@ push 2
 mov rax, qword [rbp + 8 * (4 + 2)] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next329
+je next207
 mov rax, SOB_FALSE_ADDRESS
 ret
-next329:
+next207:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8197,10 +7993,10 @@ push 2
 mov rax, qword [fvar_tbl + 320] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next327
+je next205
 mov rax, SOB_FALSE_ADDRESS
 ret
-next327:
+next205:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8209,7 +8005,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse324 
+je Lelse51 
  push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax , const_tbl + 41
@@ -8222,10 +8018,10 @@ mov rax, qword [rax + 8*2]
 mov rax, qword [rax + 8*17] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next326
+je next204
 mov rax, SOB_FALSE_ADDRESS
 ret
-next326:
+next204:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8247,10 +8043,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next325
+je t_next203
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next325:
+t_next203:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -8267,21 +8063,20 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-jmp Lexit324 
+jmp Lexit51 
  
-                              Lelse324: 
+                              Lelse51: 
 mov rax , const_tbl + 2
-Lexit324: 
-Lexit323: 
+Lexit51: 
+Lexit50: 
 
  leave
  ret
-Lcont322:
+Lcont71:
 push rax 
 mov rax, qword [rbp + 8 * (4 + 0)] 
 pop qword [rax] 
-
-                         mov rax, SOB_VOID_ADDRESS
+mov rax, SOB_VOID_ADDRESS
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
@@ -8295,10 +8090,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax + 8*3] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next337
+je next214
 mov rax, SOB_FALSE_ADDRESS
 ret
-next337:
+next214:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8318,10 +8113,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax + 8*3] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next338
+je next215
 mov rax, SOB_FALSE_ADDRESS
 ret
-next338:
+next215:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8336,10 +8131,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*1] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next336
+je next213
 mov rax, SOB_FALSE_ADDRESS
 ret
-next336:
+next213:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8354,10 +8149,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*2] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next335
+je next212
 mov rax, SOB_FALSE_ADDRESS
 ret
-next335:
+next212:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8366,11 +8161,11 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse331 
+je Lelse52 
  mov rax , const_tbl + 2
-jmp Lexit331 
+jmp Lexit52 
  
-                              Lelse331: 
+                              Lelse52: 
 push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax , const_tbl + 41
@@ -8386,10 +8181,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax + 8*3] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next334
+je next211
 mov rax, SOB_FALSE_ADDRESS
 ret
-next334:
+next211:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8404,10 +8199,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*17] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next333
+je next210
 mov rax, SOB_FALSE_ADDRESS
 ret
-next333:
+next210:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8433,10 +8228,10 @@ mov rax, qword [rbp + 8 * (4 + 0)]
 mov rax, qword [rax] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next332
+je t_next209
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next332:
+t_next209:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -8453,17 +8248,17 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-Lexit331: 
+Lexit52: 
 
  leave
  ret
-Lcont321:
+Lcont70:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next320
+je t_next202
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next320:
+t_next202:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -8483,13 +8278,13 @@ jmp r11
 
  leave
  ret
-Lcont319:
+Lcont69:
 push rax 
 push 1 
-;------------- copy env 277 ----------------
+;------------- copy env 67 ----------------
 COPY_ENV 16 , 2
 mov r15, r14
-;---------------- copy args 277 ----------------
+;---------------- copy args 67 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -8502,30 +8297,30 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend277
 inc r11
-ploop277:
  cmp r11, 0
- je pend277
+ je pend67
+ploop67:
+ cmp r11, 0
+ je pend67
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop277
-pend277:
-;---------------- make closure 277 ----------------
+ jmp ploop67
+pend67:
+;---------------- make closure 67 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode277)
-jmp Lcont277
-Lcode277:
+MAKE_CLOSURE(rax , r12 , Lcode67)
+jmp Lcont67
+Lcode67:
  push rbp
  mov rbp, rsp
- ;------------- copy env 278 ----------------
+ ;------------- copy env 68 ----------------
 COPY_ENV 24 , 3
 mov r15, r14
-;---------------- copy args 278 ----------------
+;---------------- copy args 68 ----------------
 mov r11, qword [rbp + 8*3]
 inc r11
 mov rax, r11
@@ -8538,24 +8333,24 @@ mov r10, rbp
 mov r12, 8*4
 add r10, r12
 mov r11, qword [rbp + 8*3]
- cmp r11, 0
- je pend278
 inc r11
-ploop278:
  cmp r11, 0
- je pend278
+ je pend68
+ploop68:
+ cmp r11, 0
+ je pend68
  mov r14, [r10]
  mov [r13], r14
  add r10, 8
  add r13, 8
  dec r11
- jmp ploop278
-pend278:
-;---------------- make closure 278 ----------------
+ jmp ploop68
+pend68:
+;---------------- make closure 68 ----------------
 mov r12, r15
-MAKE_CLOSURE(rax , r12 , Lcode278)
-jmp Lcont278
-Lcode278:
+MAKE_CLOSURE(rax , r12 , Lcode68)
+jmp Lcont68
+Lcode68:
  push rbp
  mov rbp, rsp
  push qword SOB_NIL_ADDRESS
@@ -8567,10 +8362,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*7] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next285
+je next179
 mov rax, SOB_FALSE_ADDRESS
 ret
-next285:
+next179:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8579,7 +8374,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse281 
+je Lelse37 
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
 push rax 
@@ -8589,10 +8384,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*7] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next284
+je next178
 mov rax, SOB_FALSE_ADDRESS
 ret
-next284:
+next178:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8601,7 +8396,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse282 
+je Lelse38 
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
 push rax 
@@ -8613,10 +8408,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*1] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next283
+je next177
 mov rax, SOB_FALSE_ADDRESS
 ret
-next283:
+next177:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8624,18 +8419,18 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-jmp Lexit282 
+jmp Lexit38 
  
-                              Lelse282: 
+                              Lelse38: 
 mov rax , const_tbl + 2
-Lexit282: 
-jmp Lexit281 
+Lexit38: 
+jmp Lexit37 
  
-                              Lelse281: 
+                              Lelse37: 
 mov rax , const_tbl + 2
-Lexit281: 
+Lexit37: 
 cmp rax, SOB_FALSE_ADDRESS 
- jne orLexit279 
+ jne orLexit36 
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
@@ -8645,10 +8440,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*8] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next290
+je next182
 mov rax, SOB_FALSE_ADDRESS
 ret
-next290:
+next182:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8657,7 +8452,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse286 
+je Lelse39 
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
 push rax 
@@ -8667,10 +8462,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*8] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next289
+je next181
 mov rax, SOB_FALSE_ADDRESS
 ret
-next289:
+next181:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8679,7 +8474,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse287 
+je Lelse40 
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
 push rax 
@@ -8691,10 +8486,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*1] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next288
+je next180
 mov rax, SOB_FALSE_ADDRESS
 ret
-next288:
+next180:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8702,18 +8497,18 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-jmp Lexit287 
+jmp Lexit40 
  
-                              Lelse287: 
+                              Lelse40: 
 mov rax , const_tbl + 2
-Lexit287: 
-jmp Lexit286 
+Lexit40: 
+jmp Lexit39 
  
-                              Lelse286: 
+                              Lelse39: 
 mov rax , const_tbl + 2
-Lexit286: 
+Lexit39: 
 cmp rax, SOB_FALSE_ADDRESS 
- jne orLexit279 
+ jne orLexit36 
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
@@ -8723,10 +8518,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*9] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next301
+je next190
 mov rax, SOB_FALSE_ADDRESS
 ret
-next301:
+next190:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8735,7 +8530,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse291 
+je Lelse41 
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
 push rax 
@@ -8745,10 +8540,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*9] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next300
+je next189
 mov rax, SOB_FALSE_ADDRESS
 ret
-next300:
+next189:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8757,7 +8552,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse292 
+je Lelse42 
  push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
@@ -8768,10 +8563,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*14] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next298
+je next187
 mov rax, SOB_FALSE_ADDRESS
 ret
-next298:
+next187:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8789,10 +8584,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*14] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next299
+je next188
 mov rax, SOB_FALSE_ADDRESS
 ret
-next299:
+next188:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8805,10 +8600,10 @@ push 2
 mov rax, qword [fvar_tbl + 320] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next297
+je next186
 mov rax, SOB_FALSE_ADDRESS
 ret
-next297:
+next186:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8817,7 +8612,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse293 
+je Lelse43 
  push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
@@ -8828,10 +8623,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*15] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next295
+je next184
 mov rax, SOB_FALSE_ADDRESS
 ret
-next295:
+next184:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8849,10 +8644,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*15] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next296
+je next185
 mov rax, SOB_FALSE_ADDRESS
 ret
-next296:
+next185:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8865,10 +8660,10 @@ push 2
 mov rax, qword [fvar_tbl + 320] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next294
+je next183
 mov rax, SOB_FALSE_ADDRESS
 ret
-next294:
+next183:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8876,23 +8671,23 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-jmp Lexit293 
+jmp Lexit43 
  
-                              Lelse293: 
+                              Lelse43: 
 mov rax , const_tbl + 2
-Lexit293: 
-jmp Lexit292 
+Lexit43: 
+jmp Lexit42 
  
-                              Lelse292: 
+                              Lelse42: 
 mov rax , const_tbl + 2
-Lexit292: 
-jmp Lexit291 
+Lexit42: 
+jmp Lexit41 
  
-                              Lelse291: 
+                              Lelse41: 
 mov rax , const_tbl + 2
-Lexit291: 
+Lexit41: 
 cmp rax, SOB_FALSE_ADDRESS 
- jne orLexit279 
+ jne orLexit36 
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
@@ -8902,10 +8697,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*10] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next308
+je next195
 mov rax, SOB_FALSE_ADDRESS
 ret
-next308:
+next195:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8914,7 +8709,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse302 
+je Lelse44 
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
 push rax 
@@ -8924,10 +8719,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*10] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next307
+je next194
 mov rax, SOB_FALSE_ADDRESS
 ret
-next307:
+next194:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8936,7 +8731,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse303 
+je Lelse45 
  push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
@@ -8947,10 +8742,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*16] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next305
+je next192
 mov rax, SOB_FALSE_ADDRESS
 ret
-next305:
+next192:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8968,10 +8763,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*16] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next306
+je next193
 mov rax, SOB_FALSE_ADDRESS
 ret
-next306:
+next193:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8986,10 +8781,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*1] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next304
+je next191
 mov rax, SOB_FALSE_ADDRESS
 ret
-next304:
+next191:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -8997,18 +8792,18 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-jmp Lexit303 
+jmp Lexit45 
  
-                              Lelse303: 
+                              Lelse45: 
 mov rax , const_tbl + 2
-Lexit303: 
-jmp Lexit302 
+Lexit45: 
+jmp Lexit44 
  
-                              Lelse302: 
+                              Lelse44: 
 mov rax , const_tbl + 2
-Lexit302: 
+Lexit44: 
 cmp rax, SOB_FALSE_ADDRESS 
- jne orLexit279 
+ jne orLexit36 
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
@@ -9018,10 +8813,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*11] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next313
+je next198
 mov rax, SOB_FALSE_ADDRESS
 ret
-next313:
+next198:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -9030,7 +8825,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse309 
+je Lelse46 
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
 push rax 
@@ -9040,10 +8835,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*11] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next312
+je next197
 mov rax, SOB_FALSE_ADDRESS
 ret
-next312:
+next197:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -9052,7 +8847,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse310 
+je Lelse47 
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8*2] 
 mov rax, qword [rax + 8*1] 
@@ -9072,10 +8867,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next311
+je next196
 mov rax, SOB_FALSE_ADDRESS
 ret
-next311:
+next196:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -9083,18 +8878,18 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-jmp Lexit310 
+jmp Lexit47 
  
-                              Lelse310: 
+                              Lelse47: 
 mov rax , const_tbl + 2
-Lexit310: 
-jmp Lexit309 
+Lexit47: 
+jmp Lexit46 
  
-                              Lelse309: 
+                              Lelse46: 
 mov rax , const_tbl + 2
-Lexit309: 
+Lexit46: 
 cmp rax, SOB_FALSE_ADDRESS 
- jne orLexit279 
+ jne orLexit36 
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
@@ -9104,10 +8899,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*12] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next318
+je next201
 mov rax, SOB_FALSE_ADDRESS
 ret
-next318:
+next201:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -9116,7 +8911,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse314 
+je Lelse48 
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
 push rax 
@@ -9126,10 +8921,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*12] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next317
+je next200
 mov rax, SOB_FALSE_ADDRESS
 ret
-next317:
+next200:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -9138,7 +8933,7 @@ inc rbx
 shl rbx, 3
 add rsp, rbx
 cmp rax, SOB_FALSE_ADDRESS 
-je Lelse315 
+je Lelse49 
  push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8*2] 
 mov rax, qword [rax + 8*1] 
@@ -9158,10 +8953,10 @@ mov rax, qword [rax + 8*0]
 mov rax, qword [rax + 8*0] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next316
+je next199
 mov rax, SOB_FALSE_ADDRESS
 ret
-next316:
+next199:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -9169,18 +8964,18 @@ pop rbx
 inc rbx
 shl rbx, 3
 add rsp, rbx
-jmp Lexit315 
+jmp Lexit49 
  
-                              Lelse315: 
+                              Lelse49: 
 mov rax , const_tbl + 2
-Lexit315: 
-jmp Lexit314 
+Lexit49: 
+jmp Lexit48 
  
-                              Lelse314: 
+                              Lelse48: 
 mov rax , const_tbl + 2
-Lexit314: 
+Lexit48: 
 cmp rax, SOB_FALSE_ADDRESS 
- jne orLexit279 
+ jne orLexit36 
 push qword SOB_NIL_ADDRESS
 mov rax, qword [rbp + 8 * (4 + 1)] 
 push rax 
@@ -9192,10 +8987,10 @@ mov rax, qword [rax + 8*1]
 mov rax, qword [rax + 8*13] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next280
+je t_next176
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next280:
+t_next176:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -9212,21 +9007,21 @@ mov rax, rdi
 CLOSURE_CODE r11 , rax
 mov rbp, r15
 jmp r11
-orLexit279: 
+orLexit36: 
 
  leave
  ret
-Lcont278:
+Lcont68:
 
  leave
  ret
-Lcont277:
+Lcont67:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je t_next276
+je t_next175
 mov rax, SOB_FALSE_ADDRESS
 ret
-t_next276:
+t_next175:
 push qword [rax + 1]
 push qword [rbp + 8 * 1]
 mov r10, [rbp + 8*3]
@@ -9246,13 +9041,13 @@ jmp r11
 
  leave
  ret
-Lcont275:
+Lcont66:
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next274
+je next174
 mov rax, SOB_FALSE_ADDRESS
 ret
-next274:
+next174:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -9265,19 +9060,135 @@ mov rax, SOB_VOID_ADDRESS
 
     call write_sob_if_not_void
 
+;------------- copy env 72 ----------------
+COPY_ENV 8 , 1
+mov r15, r14
+;---------------- copy args 72 ----------------
+mov r11, qword [rbp + 8*3]
+inc r11
+mov rax, r11
+mov rdx, 8
+mul rdx
+mov r11, rax
+MALLOC r13, r11
+mov [r15], r13
+mov r10, rbp
+mov r12, 8*4
+add r10, r12
+mov r11, qword [rbp + 8*3]
+inc r11
+ cmp r11, 0
+ je pend72
+ploop72:
+ cmp r11, 0
+ je pend72
+ mov r14, [r10]
+ mov [r13], r14
+ add r10, 8
+ add r13, 8
+ dec r11
+ jmp ploop72
+pend72:
+;---------------- make closure 72 ----------------
+mov r12, r15
+MAKE_CLOSURE(rax , r12 , Lcode72)
+jmp Lcont72
+Lcode72:
+ push rbp
+ mov rbp, rsp
+ push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 32
+push rax 
+mov rax, qword [rbp + 8 * (4 + 0)] 
+push rax 
+push 2 
+mov rax, qword [fvar_tbl + 112] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next218
+mov rax, SOB_FALSE_ADDRESS
+ret
+next218:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+cmp rax, SOB_FALSE_ADDRESS 
+je Lelse53 
+ mov rax , const_tbl + 133
+jmp Lexit53 
+ 
+                              Lelse53: 
+push qword SOB_NIL_ADDRESS
 push qword SOB_NIL_ADDRESS
 mov rax , const_tbl + 41
 push rax 
-mov rax , const_tbl + 118
+mov rax, qword [rbp + 8 * (4 + 0)] 
 push rax 
 push 2 
 mov rax, qword [fvar_tbl + 280] 
 mov sil, [rax]
 cmp sil, T_CLOSURE
-je next339
+je next217
 mov rax, SOB_FALSE_ADDRESS
 ret
-next339:
+next217:
+push qword [rax + 1]
+call [rax + 9]
+add rsp, 8*1 
+pop rbx
+inc rbx
+shl rbx, 3
+add rsp, rbx
+push rax 
+push 1 
+mov rax, qword [fvar_tbl + 376] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je t_next216
+mov rax, SOB_FALSE_ADDRESS
+ret
+t_next216:
+push qword [rax + 1]
+push qword [rbp + 8 * 1]
+mov r10, [rbp + 8*3]
+add r10, 5
+mov r15, qword [rbp]
+SHIFT_FRAME (5 + 1) , r10
+mov rdi , rax
+mov rax, r10
+mov rdx, 8
+mul rdx
+add rsp, rax
+mov rbp, rsp
+mov rax, rdi
+CLOSURE_CODE r11 , rax
+mov rbp, r15
+jmp r11
+Lexit53: 
+
+ leave
+ ret
+Lcont72:
+mov qword [fvar_tbl + 376], rax 
+mov rax, SOB_VOID_ADDRESS 
+
+    call write_sob_if_not_void
+
+push qword SOB_NIL_ADDRESS
+mov rax , const_tbl + 142
+push rax 
+push 1 
+mov rax, qword [fvar_tbl + 376] 
+mov sil, [rax]
+cmp sil, T_CLOSURE
+je next219
+mov rax, SOB_FALSE_ADDRESS
+ret
+next219:
 push qword [rax + 1]
 call [rax + 9]
 add rsp, 8*1 
@@ -9290,7 +9201,7 @@ add rsp, rbx
  add rsp, 4*8
  pop rbp
  ret
-apply:
+l_apply:
     push rbp
     mov r15, rbp
     mov rbp, rsp
@@ -9372,7 +9283,7 @@ apply:
 
     jmp r11
 
-cons:
+l_cons:
     push rbp
     mov rbp, rsp
     
@@ -9383,7 +9294,7 @@ cons:
     leave
     ret
 
-car:
+l_car:
     push rbp
     mov rbp, rsp
 
@@ -9393,7 +9304,7 @@ car:
     leave
     ret
 
-cdr:
+l_cdr:
     push rbp
     mov rbp, rsp
 
@@ -9407,9 +9318,9 @@ set_car:
     push rbp
     mov rbp, rsp
 
-    mov rdi, [rbp + 8*4]
-    mov rsi, [rbp + 8*5]
-    mov qword [rdi+ 8], rdi
+    mov r10, [rbp + 8*4]
+    mov r11, [rbp + 8*5]
+    mov qword [r10 + 1], r11
     mov rax, SOB_VOID_ADDRESS
     
     leave
